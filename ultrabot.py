@@ -6,8 +6,8 @@ class ultraChatBot():
     def __init__(self, json):
         self.json = json
         self.dict_messages = json['data']
-        self.ultraAPIUrl = 'https://api.ultramsg.com/{{instance_id}}/'
-        self.token = '{{token}}'
+        self.ultraAPIUrl = 'https://api.ultramsg.com/instance122729/'
+        self.token = 'rjasbdgk5ff8aoal'
 
    
     def send_requests(self, type, data):
