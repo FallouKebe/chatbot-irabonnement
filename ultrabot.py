@@ -16,6 +16,10 @@ class ultraChatBot():
         self.sessions_file = 'user_sessions.json'
         self.user_sessions = self.load_sessions()
         
+        # NOUVEAU : Système de déduplication des messages
+        self.processed_messages_file = 'processed_messages.json'
+        self.processed_messages = self.load_processed_messages()
+        
         # Messages anti-spam pour utilisateurs normaux
         self.anti_spam_messages = [
             "Merci de patienter 🙏 Votre demande est en cours de traitement.",
@@ -39,7 +43,63 @@ class ultraChatBot():
             "Patience svp, votre insistance rallonge les délais de réponse. Nous vous aiderons."
         ]
 
+    def load_processed_messages(self):
+        """Charge la liste des messages déjà traités"""
+        try:
+            if os.path.exists(self.processed_messages_file):
+                with open(self.processed_messages_file, 'r', encoding='utf-8') as f:
+                    messages = json.load(f)
+                    # Nettoyer les anciens messages (plus de 24h)
+                    current_time = time.time()
+                    cleaned = {k: v for k, v in messages.items() if current_time - v < 86400}
+                    if len(cleaned) != len(messages):
+                        self.save_processed_messages(cleaned)
+                    return cleaned
+            return {}
+        except Exception as e:
+            print(f"❌ Erreur chargement messages traités: {e}")
+            return {}
+
+    def save_processed_messages(self, messages=None):
+        """Sauvegarde la liste des messages traités"""
+        try:
+            if messages is None:
+                messages = self.processed_messages
+            with open(self.processed_messages_file, 'w', encoding='utf-8') as f:
+                json.dump(messages, f)
+        except Exception as e:
+            print(f"❌ Erreur sauvegarde messages traités: {e}")
+
+    def is_message_already_processed(self, message):
+        """Vérifie si ce message a déjà été traité"""
+        message_id = message.get('id', '')
+        if message_id and message_id in self.processed_messages:
+            print(f"🔄 Message déjà traité: {message_id}")
+            return True
+        return False
+
+    def mark_message_as_processed(self, message):
+        """Marque un message comme traité"""
+        message_id = message.get('id', '')
+        if message_id:
+            self.processed_messages[message_id] = time.time()
+            self.save_processed_messages()
+            print(f"✅ Message marqué comme traité: {message_id}")
+
     def load_sessions(self):
+        """Charge les sessions depuis le fichier JSON"""
+        try:
+            if os.path.exists(self.sessions_file):
+                with open(self.sessions_file, 'r', encoding='utf-8') as f:
+                    sessions = json.load(f)
+                    print(f"✅ Sessions chargées: {len(sessions)} utilisateurs")
+                    return sessions
+            else:
+                print("📝 Nouveau fichier de sessions créé")
+                return {}
+        except Exception as e:
+            print(f"❌ Erreur chargement sessions: {e}")
+            return {}
         """Charge les sessions depuis le fichier JSON"""
         try:
             if os.path.exists(self.sessions_file):
@@ -230,7 +290,7 @@ Merci pour votre patience."""
         return state in active_states
 
     def check_spam(self, chatID):
-        """NOUVELLE VERSION: Spam check intelligent"""
+        """CORRECTION: Spam check après 3 messages successifs"""
         current_time = time.time()
         
         if chatID not in self.user_sessions:
@@ -243,27 +303,8 @@ Merci pour votre patience."""
             print(f"🔄 Utilisateur {chatID} dans flux actif - pas de spam check")
             return False
         
-        # Si utilisateur transféré : spam après 5+ messages en 5 minutes
+        # Si utilisateur transféré : spam après 3+ messages en 2 minutes
         if current_state in ["transferred_to_sav", "transferred_to_human"]:
-            # Nettoyer les anciens messages (plus de 300 secondes = 5 minutes)
-            self.user_sessions[chatID]["messages"] = [
-                msg_time for msg_time in self.user_sessions[chatID]["messages"] 
-                if current_time - msg_time < 300
-            ]
-            
-            # Ajouter le message actuel
-            self.user_sessions[chatID]["messages"].append(current_time)
-            
-            message_count = len(self.user_sessions[chatID]["messages"])
-            if message_count >= 8:
-                return "transferred_total_silence"  # Silence total après 8+ messages
-            elif message_count >= 5:
-                return "transferred_spam"  # Message anti-spam entre 5-7 messages
-            else:
-                return "transferred_silent"  # Silence simple < 5 messages
-        
-        # Utilisateur normal : spam = 5+ messages en 2 minutes
-        else:
             # Nettoyer les anciens messages (plus de 120 secondes = 2 minutes)
             self.user_sessions[chatID]["messages"] = [
                 msg_time for msg_time in self.user_sessions[chatID]["messages"] 
@@ -273,7 +314,31 @@ Merci pour votre patience."""
             # Ajouter le message actuel
             self.user_sessions[chatID]["messages"].append(current_time)
             
-            if len(self.user_sessions[chatID]["messages"]) >= 5:
+            message_count = len(self.user_sessions[chatID]["messages"])
+            print(f"🔍 Spam check transféré - Messages: {message_count}")
+            
+            if message_count >= 6:
+                return "transferred_total_silence"  # Silence total après 6+ messages
+            elif message_count >= 3:
+                return "transferred_spam"  # Message anti-spam après 3+ messages
+            else:
+                return "transferred_silent"  # Silence simple < 3 messages
+        
+        # Utilisateur normal : spam = 3+ messages en 90 secondes
+        else:
+            # Nettoyer les anciens messages (plus de 90 secondes)
+            self.user_sessions[chatID]["messages"] = [
+                msg_time for msg_time in self.user_sessions[chatID]["messages"] 
+                if current_time - msg_time < 90
+            ]
+            
+            # Ajouter le message actuel
+            self.user_sessions[chatID]["messages"].append(current_time)
+            
+            message_count = len(self.user_sessions[chatID]["messages"])
+            print(f"🔍 Spam check normal - Messages: {message_count}")
+            
+            if message_count >= 3:
                 return "normal_spam"
         
         return False
@@ -308,6 +373,13 @@ Merci pour votre patience."""
     def Processingـincomingـmessages(self):
         if self.dict_messages != []:
             message = self.dict_messages
+            
+            # NOUVEAU : Vérification de déduplication
+            if self.is_message_already_processed(message):
+                return 'AlreadyProcessed'
+            
+            # Marquer le message comme traité immédiatement
+            self.mark_message_as_processed(message)
             
             # Vérifier les images au lieu de "message vide"
             if self.is_image_message(message):
@@ -362,15 +434,20 @@ Merci pour votre patience."""
                 print(f"⚠️ Utilisateur {chatID} normal - anti-spam")
                 return self.send_message(chatID, spam_response)
             
-            # === PRIORITÉ #3 : SALUTATIONS SEULEMENT SI ÉTAT MENU ===
+            # === PRIORITÉ #3 : SALUTATIONS ET MESSAGES SPÉCIAUX ===
             if current_state == "menu":
+                # Gestion des salutations
                 if any(word in message_lower for word in ['bonjour', 'bonsoir', 'salut', 'hello', 'hi']):
+                    print(f"👋 Salutation détectée: {message_lower}")
                     return self.send_message(chatID, self.get_main_menu())
                 
+                # Messages spécifiques du site
                 if "je vous contacte depuis le site irabonnement" in message_lower:
+                    print(f"🌐 Message site détecté")
                     return self.send_message(chatID, self.get_main_menu())
                     
                 if "j'ai une question" in message_lower:
+                    print(f"❓ Question générique détectée")
                     return self.send_message(chatID, self.get_main_menu())
             
             # === PRIORITÉ #4 : POLITESSE (sauf si transféré) ===
@@ -388,6 +465,10 @@ Merci pour votre patience."""
             if current_state == "menu":
                 print(f"🏠 Traitement menu pour: {message_lower}")
                 
+                # CORRECTION: Gestion des images non sollicitées en état menu
+                if message_lower == "image":
+                    return self.send_message(chatID, "Je n'ai pas besoin d'image pour le moment. 😊\n\nVeuillez choisir une option du menu en tapant le numéro (1, 2, 3, 4, 5 ou 6).")
+                
                 if message_lower == "1" or "comment ça fonctionne" in message_lower:
                     self.set_user_state(chatID, "services_selection")
                     return self.send_message(chatID, self.get_services_selection())
@@ -401,6 +482,7 @@ Merci pour votre patience."""
                     return self.send_message(chatID, self.handle_technical_problem(chatID))
                     
                 elif message_lower == "4" or "réabonner" in message_lower or "reabonner" in message_lower:
+                    # CORRECTION: L'option 4 reste en état menu et ne demande jamais d'image
                     return self.send_message(chatID, self.handle_resubscription(chatID))
                     
                 elif message_lower == "5" or "acheter un abonnement" in message_lower or "nouvelle commande" in message_lower:
