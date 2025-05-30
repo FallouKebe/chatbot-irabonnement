@@ -100,19 +100,6 @@ class ultraChatBot():
         except Exception as e:
             print(f"❌ Erreur chargement sessions: {e}")
             return {}
-        """Charge les sessions depuis le fichier JSON"""
-        try:
-            if os.path.exists(self.sessions_file):
-                with open(self.sessions_file, 'r', encoding='utf-8') as f:
-                    sessions = json.load(f)
-                    print(f"✅ Sessions chargées: {len(sessions)} utilisateurs")
-                    return sessions
-            else:
-                print("📝 Nouveau fichier de sessions créé")
-                return {}
-        except Exception as e:
-            print(f"❌ Erreur chargement sessions: {e}")
-            return {}
 
     def save_sessions(self):
         """Sauvegarde les sessions dans le fichier JSON"""
@@ -154,7 +141,7 @@ class ultraChatBot():
         sav_destination = "120363366576958989@g.us"  # Format: 1234567890-1234567890@g.us
         
         # OPTION 3: Envoyer aux deux (groupe + responsable)
-        # sav_destination = ["+221770184531@c.us", "VOTRE_GROUPE_SAV_ID@g.us"]
+        # sav_destination = ["+221770184531@c.us", "120363366576958989@g.us"]
         client_phone_raw = client_info.get('phone', 'Inconnu')
         
         # NOUVEAU: Formater le numéro pour le SAV
@@ -416,6 +403,12 @@ Merci pour votre patience."""
             # Marquer le message comme traité immédiatement
             self.mark_message_as_processed(message)
             
+            # NOUVEAU: Ignorer les messages du groupe SAV
+            sav_group_id = "120363366576958989@g.us"  # ID du groupe SAV
+            if message.get('from') == sav_group_id:
+                print(f"🔇 Message du groupe SAV ignoré - pas de traitement")
+                return 'SAVGroupIgnored'
+            
             # Vérifier les images au lieu de "message vide"
             if self.is_image_message(message):
                 print(f"📸 Image reçue de {message['from']}")
@@ -452,7 +445,7 @@ Merci pour votre patience."""
             spam_status = self.check_spam(chatID)
             
             if spam_status == "transferred_total_silence":
-                print(f"🔇 Utilisateur {chatID} transféré - silence total (8+ messages)")
+                print(f"🔇 Utilisateur {chatID} transféré - silence total (6+ messages)")
                 return "TransferredTotalSilence"
                 
             elif spam_status == "transferred_spam":
