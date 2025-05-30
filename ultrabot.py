@@ -9,8 +9,8 @@ class ultraChatBot():
     def __init__(self, json):
         self.json = json
         self.dict_messages = json['data']
-        self.ultraAPIUrl = 'https://api.ultramsg.com/instance122729/'
-        self.token = 'rjasbdgk5ff8aoal'
+        self.ultraAPIUrl = 'https://api.ultramsg.com/instance114147/'
+        self.token = 'e9gigjx981vwnnzh'
         
         # SOLUTION PERSISTANCE : Fichier pour sauvegarder les sessions
         self.sessions_file = 'user_sessions.json'
