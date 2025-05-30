@@ -41,17 +41,25 @@ class ultraChatBot():
         return answer
 
     def send_to_sav(self, client_info, problem_type="general"):
-        """Envoie les infos au SAV WhatsApp +221770184531"""
+        """Envoie une alerte simple au SAV WhatsApp +221770184531"""
         sav_number = "+221770184531@c.us"
+        client_phone = client_info.get('phone', 'Inconnu')
         
+        # Messages simples sans caractères spéciaux
         if problem_type == "no_access":
-            message = f"🚨 CLIENT SANS ACCÈS:\n\nClient: {client_info['phone']}\nNom: {client_info.get('name', 'Non fourni')}\nCapture paiement: {client_info.get('payment_proof', 'Image reçue')}\n\nÀ traiter rapidement !"
-        elif problem_type == "technical":
-            message = f"🔧 PROBLÈME TECHNIQUE:\n\nClient: {client_info['phone']}\nProblème: {client_info.get('problem', 'Capture d\'écran reçue')}\n\nÀ résoudre rapidement !"
-        else:
-            message = f"📞 DEMANDE CLIENT:\n\nClient: {client_info['phone']}\nType: {problem_type}\n\nÀ traiter"
+            client_name = client_info.get('name', 'Non fourni')
+            message = f"ALERTE: CLIENT SANS ACCES\n\nNumero: {client_phone}\nNom: {client_name}\nProbleme: Commande payee mais pas recu\n\nTraiter rapidement SVP"
             
-        print(f"Envoi vers SAV: {message}")
+        elif problem_type == "technical":
+            message = f"ALERTE: PROBLEME TECHNIQUE\n\nNumero: {client_phone}\nProbleme: Dysfonctionnement signale\n\nResoudre rapidement SVP"
+            
+        elif problem_type == "conseiller_humain":
+            message = f"ALERTE: DEMANDE CONSEILLER\n\nNumero: {client_phone}\nDemande: Contact conseiller humain\n\nTraiter rapidement SVP"
+            
+        else:
+            message = f"ALERTE: DEMANDE CLIENT\n\nNumero: {client_phone}\nType: {problem_type}\n\nTraiter SVP"
+            
+        print(f"Envoi alerte SAV: {message}")
         return self.send_message(sav_number, message)
 
     def get_main_menu(self):
