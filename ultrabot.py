@@ -9,8 +9,8 @@ class ultraChatBot():
     def __init__(self, json):
         self.json = json
         self.dict_messages = json['data']
-        self.ultraAPIUrl = 'https://api.ultramsg.com/instance122942/'
-        self.token = '2e9aheysbak5rvjl'
+        self.ultraAPIUrl = 'https://api.ultramsg.com/instance122729/'
+        self.token = 'rjasbdgk5ff8aoal'
         
         # SOLUTION PERSISTANCE : Fichier pour sauvegarder les sessions
         self.sessions_file = 'user_sessions.json'
@@ -230,7 +230,7 @@ Merci pour votre patience."""
         return state in active_states
 
     def check_spam(self, chatID):
-        """NOUVELLE VERSION: Spam check intelligent"""
+        """CORRECTION: Spam check après 3 messages successifs"""
         current_time = time.time()
         
         if chatID not in self.user_sessions:
@@ -243,27 +243,8 @@ Merci pour votre patience."""
             print(f"🔄 Utilisateur {chatID} dans flux actif - pas de spam check")
             return False
         
-        # Si utilisateur transféré : spam après 5+ messages en 5 minutes
+        # Si utilisateur transféré : spam après 3+ messages en 2 minutes
         if current_state in ["transferred_to_sav", "transferred_to_human"]:
-            # Nettoyer les anciens messages (plus de 300 secondes = 5 minutes)
-            self.user_sessions[chatID]["messages"] = [
-                msg_time for msg_time in self.user_sessions[chatID]["messages"] 
-                if current_time - msg_time < 300
-            ]
-            
-            # Ajouter le message actuel
-            self.user_sessions[chatID]["messages"].append(current_time)
-            
-            message_count = len(self.user_sessions[chatID]["messages"])
-            if message_count >= 8:
-                return "transferred_total_silence"  # Silence total après 8+ messages
-            elif message_count >= 5:
-                return "transferred_spam"  # Message anti-spam entre 5-7 messages
-            else:
-                return "transferred_silent"  # Silence simple < 5 messages
-        
-        # Utilisateur normal : spam = 5+ messages en 2 minutes
-        else:
             # Nettoyer les anciens messages (plus de 120 secondes = 2 minutes)
             self.user_sessions[chatID]["messages"] = [
                 msg_time for msg_time in self.user_sessions[chatID]["messages"] 
@@ -273,7 +254,31 @@ Merci pour votre patience."""
             # Ajouter le message actuel
             self.user_sessions[chatID]["messages"].append(current_time)
             
-            if len(self.user_sessions[chatID]["messages"]) >= 5:
+            message_count = len(self.user_sessions[chatID]["messages"])
+            print(f"🔍 Spam check transféré - Messages: {message_count}")
+            
+            if message_count >= 6:
+                return "transferred_total_silence"  # Silence total après 6+ messages
+            elif message_count >= 3:
+                return "transferred_spam"  # Message anti-spam après 3+ messages
+            else:
+                return "transferred_silent"  # Silence simple < 3 messages
+        
+        # Utilisateur normal : spam = 3+ messages en 90 secondes
+        else:
+            # Nettoyer les anciens messages (plus de 90 secondes)
+            self.user_sessions[chatID]["messages"] = [
+                msg_time for msg_time in self.user_sessions[chatID]["messages"] 
+                if current_time - msg_time < 90
+            ]
+            
+            # Ajouter le message actuel
+            self.user_sessions[chatID]["messages"].append(current_time)
+            
+            message_count = len(self.user_sessions[chatID]["messages"])
+            print(f"🔍 Spam check normal - Messages: {message_count}")
+            
+            if message_count >= 3:
                 return "normal_spam"
         
         return False
@@ -388,6 +393,10 @@ Merci pour votre patience."""
             if current_state == "menu":
                 print(f"🏠 Traitement menu pour: {message_lower}")
                 
+                # CORRECTION: Gestion des images non sollicitées en état menu
+                if message_lower == "image":
+                    return self.send_message(chatID, "Je n'ai pas besoin d'image pour le moment. 😊\n\nVeuillez choisir une option du menu en tapant le numéro (1, 2, 3, 4, 5 ou 6).")
+                
                 if message_lower == "1" or "comment ça fonctionne" in message_lower:
                     self.set_user_state(chatID, "services_selection")
                     return self.send_message(chatID, self.get_services_selection())
@@ -401,6 +410,7 @@ Merci pour votre patience."""
                     return self.send_message(chatID, self.handle_technical_problem(chatID))
                     
                 elif message_lower == "4" or "réabonner" in message_lower or "reabonner" in message_lower:
+                    # CORRECTION: L'option 4 reste en état menu et ne demande jamais d'image
                     return self.send_message(chatID, self.handle_resubscription(chatID))
                     
                 elif message_lower == "5" or "acheter un abonnement" in message_lower or "nouvelle commande" in message_lower:
