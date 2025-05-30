@@ -135,7 +135,7 @@ class ultraChatBot():
         return answer
 
     def send_to_sav(self, client_info, problem_type="general"):
-        """Envoie une alerte au SAV WhatsApp +221770184531"""
+        """Envoie une alerte au SAV WhatsApp +22991680782"""
         sav_number = "+22991680782@c.us"
         client_phone = client_info.get('phone', 'Inconnu')
         
@@ -290,7 +290,7 @@ Merci pour votre patience."""
         return state in active_states
 
     def check_spam(self, chatID):
-        """CORRECTION: Spam check après 3 messages successifs"""
+        """CORRECTION FINALE: Spam check qui fonctionne vraiment"""
         current_time = time.time()
         
         if chatID not in self.user_sessions:
@@ -303,6 +303,9 @@ Merci pour votre patience."""
             print(f"🔄 Utilisateur {chatID} dans flux actif - pas de spam check")
             return False
         
+        # CORRECTION: Toujours ajouter le message actuel AVANT le nettoyage
+        self.user_sessions[chatID]["messages"].append(current_time)
+        
         # Si utilisateur transféré : spam après 3+ messages en 2 minutes
         if current_state in ["transferred_to_sav", "transferred_to_human"]:
             # Nettoyer les anciens messages (plus de 120 secondes = 2 minutes)
@@ -311,11 +314,11 @@ Merci pour votre patience."""
                 if current_time - msg_time < 120
             ]
             
-            # Ajouter le message actuel
-            self.user_sessions[chatID]["messages"].append(current_time)
-            
             message_count = len(self.user_sessions[chatID]["messages"])
             print(f"🔍 Spam check transféré - Messages: {message_count}")
+            
+            # CORRECTION: Sauvegarder après modification
+            self.save_sessions()
             
             if message_count >= 6:
                 return "transferred_total_silence"  # Silence total après 6+ messages
@@ -332,11 +335,11 @@ Merci pour votre patience."""
                 if current_time - msg_time < 90
             ]
             
-            # Ajouter le message actuel
-            self.user_sessions[chatID]["messages"].append(current_time)
-            
             message_count = len(self.user_sessions[chatID]["messages"])
             print(f"🔍 Spam check normal - Messages: {message_count}")
+            
+            # CORRECTION: Sauvegarder après modification
+            self.save_sessions()
             
             if message_count >= 3:
                 return "normal_spam"
