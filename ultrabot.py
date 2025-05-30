@@ -16,7 +16,7 @@ class ultraChatBot():
         self.sessions_file = 'user_sessions.json'
         self.user_sessions = self.load_sessions()
         
-        # Messages anti-spam
+        # Messages anti-spam pour utilisateurs normaux
         self.anti_spam_messages = [
             "Merci de patienter 🙏 Votre demande est en cours de traitement.",
             "Plus vous envoyez de messages, plus le temps de traitement est rallongé.",
@@ -28,6 +28,15 @@ class ultraChatBot():
             "Nous prenons en compte votre message, merci de ne pas spammer.",
             "Patience svp, notre équipe traite votre demande.",
             "Merci d'éviter les messages répétés, nous vous traitons."
+        ]
+        
+        # Messages anti-spam pour utilisateurs transférés (après 3-5 messages)
+        self.transferred_spam_messages = [
+            "Plus vous envoyez de messages, plus le délai de traitement sera rallongé. ⏳ Merci de patienter.",
+            "Votre demande est prise en charge, merci de patienter sans insister. 🙏 Nous allons régler votre problème.",
+            "Chaque message supplémentaire retarde le traitement de votre dossier. Patience svp.",
+            "Notre équipe vous contactera, inutile d'envoyer plus de messages. Nous réglons votre problème.",
+            "Patience svp, votre insistance rallonge les délais de réponse. Nous vous aiderons."
         ]
 
     def load_sessions(self):
@@ -139,7 +148,7 @@ Quel produit souhaitez-vous comprendre ? Répondez simplement avec le nom du pro
             
             "surfshark vpn": "🔒 Surfshark VPN :\n\n🛡️ VPN premium pour sécuriser votre connexion et accéder aux contenus géo-bloqués.\n\nCompatible tous appareils, configuration simple.",
             "surfshark": "🔒 Surfshark VPN :\n\n🛡️ VPN premium pour sécuriser votre connexion et accéder aux contenus géo-bloqués.\n\nCompatible tous appareils, configuration simple.",
-    
+            
             "nordvpn": "🔵 NordVPN :\n\n🛡️ VPN haut de gamme pour protection et accès mondial.\n\nServeurs ultra-rapides, sécurité maximale.",
             "nord vpn": "🔵 NordVPN :\n\n🛡️ VPN haut de gamme pour protection et accès mondial.\n\nServeurs ultra-rapides, sécurité maximale.",
             "nord": "🔵 NordVPN :\n\n🛡️ VPN haut de gamme pour protection et accès mondial.\n\nServeurs ultra-rapides, sécurité maximale.",
@@ -168,11 +177,9 @@ Quel produit souhaitez-vous comprendre ? Répondez simplement avec le nom du pro
     def handle_no_access_request(self, chatID):
         return """D'accord, nous allons vous aider ✅
 
-Veuillez nous envoyer :
-- Votre **nom et prénom** utilisés lors de la commande
-- Une **capture d'écran de votre paiement**
+Veuillez d'abord nous envoyer votre **nom et prénom** utilisés lors de la commande.
 
-Dès réception, nous transmettrons au service technique."""
+Ensuite, nous vous demanderons la capture d'écran de votre paiement."""
 
     def handle_technical_problem(self, chatID):
         return """Désolé pour le désagrément 😥
@@ -217,7 +224,7 @@ La livraison est automatique 📩"""
 Merci pour votre patience."""
 
     def check_spam(self, chatID):
-        """Vérifie si l'utilisateur spam"""
+        """Vérifie si l'utilisateur spam - CORRIGÉ"""
         current_time = time.time()
         
         if chatID not in self.user_sessions:
@@ -225,27 +232,35 @@ Merci pour votre patience."""
         
         current_state = self.get_user_state(chatID)
         
-        # Si utilisateur transféré : spam = 5+ messages en 3 minutes
+        # CORRECTION : Si utilisateur transféré = spam après 3+ messages en 3 minutes
         if current_state in ["transferred_to_sav", "transferred_to_human"]:
+            # Nettoyer les anciens messages (plus de 180 secondes = 3 minutes)
             self.user_sessions[chatID]["messages"] = [
                 msg_time for msg_time in self.user_sessions[chatID]["messages"] 
                 if current_time - msg_time < 180
             ]
             
+            # Ajouter le message actuel
             self.user_sessions[chatID]["messages"].append(current_time)
             
-            if len(self.user_sessions[chatID]["messages"]) >= 5:
-                return "transferred_spam"
+            # CORRECTION : Après 3+ messages = message anti-spam, après 7+ = silence
+            message_count = len(self.user_sessions[chatID]["messages"])
+            if message_count >= 7:
+                return "transferred_total_silence"  # Silence total après 7+ messages
+            elif message_count >= 3:
+                return "transferred_spam"  # Message anti-spam entre 3-6 messages
             else:
-                return "transferred_silent"
+                return "transferred_silent"  # Silence simple < 3 messages
         
         # Utilisateur normal : spam = 3+ messages en 60 secondes
         else:
+            # Nettoyer les anciens messages (plus de 60 secondes)
             self.user_sessions[chatID]["messages"] = [
                 msg_time for msg_time in self.user_sessions[chatID]["messages"] 
                 if current_time - msg_time < 60
             ]
             
+            # Ajouter le message actuel
             self.user_sessions[chatID]["messages"].append(current_time)
             
             if len(self.user_sessions[chatID]["messages"]) >= 3:
@@ -275,55 +290,69 @@ Merci pour votre patience."""
         self.user_sessions[chatID]["data"][key] = value
         self.save_sessions()  # IMPORTANT: Sauvegarder après chaque modification de données
 
+    def is_image_message(self, message):
+        """NOUVEAU : Détecte si le message est une image"""
+        return message.get('type') == 'image'
+
     def Processingـincomingـmessages(self):
         if self.dict_messages != []:
             message = self.dict_messages
             
-            # Vérifications de sécurité
-            if not message.get('body'):
-                print("Message vide reçu")
+            # CORRECTION : Vérifier les images au lieu de "message vide"
+            if self.is_image_message(message):
+                print(f"📸 Image reçue de {message['from']}")
+                # On traite l'image selon l'état, pas comme message vide
+                chatID = message['from']
+                message_body = "[IMAGE]"  # Texte de remplacement pour les logs
+                message_lower = "image"
+            elif not message.get('body'):
+                print("Message vide reçu (pas une image)")
                 return 'EmptyMessage'
+            else:
+                chatID = message['from']
+                message_body = message['body'].strip()
+                message_lower = message_body.lower()
             
+            # Vérifier que ce n'est pas un message envoyé par nous
             if message['fromMe']:
                 print("Message envoyé par nous, ignoré")
                 return 'FromMe'
                 
-            chatID = message['from']
-            message_body = message['body'].strip()
-            message_lower = message_body.lower()
-            
             print(f"📱 Message reçu de {chatID}: {message_body}")
             print(f"🔄 État actuel: {self.get_user_state(chatID)}")
             
-            # Gestion du spam
+            # === GESTION DU SPAM AMÉLIORÉE ===
             current_state = self.get_user_state(chatID)
             spam_status = self.check_spam(chatID)
             
-            if spam_status == "transferred_spam":
-                transferred_spam_messages = [
-                    "Plus vous envoyez de messages, plus le délai de traitement sera rallongé. ⏳",
-                    "Votre demande est prise en charge, merci de patienter sans insister. 🙏",
-                    "Chaque message supplémentaire retarde le traitement de votre dossier.",
-                    "Notre équipe vous contactera, inutile d'envoyer plus de messages.",
-                    "Patience svp, votre insistance rallonge les délais de réponse."
-                ]
-                response = random.choice(transferred_spam_messages)
+            if spam_status == "transferred_total_silence":
+                # Utilisateur transféré qui spam trop (7+ messages) : silence total
+                print(f"🔇 Utilisateur {chatID} transféré - silence total (7+ messages)")
+                return "TransferredTotalSilence"
+                
+            elif spam_status == "transferred_spam":
+                # Utilisateur transféré qui spam modérément (3-6 messages) : message anti-spam
+                response = random.choice(self.transferred_spam_messages)
+                print(f"⚠️ Utilisateur {chatID} transféré - message anti-spam")
                 return self.send_message(chatID, response)
                 
             elif spam_status == "transferred_silent":
-                print(f"👤 Utilisateur {chatID} transféré - silence total")
+                # Utilisateur transféré, pas de spam (< 3 messages) : silence simple
+                print(f"🔇 Utilisateur {chatID} transféré - silence simple")
                 return "TransferredSilent"
                 
             elif spam_status == "normal_spam":
+                # Utilisateur normal qui spam
                 spam_response = random.choice(self.anti_spam_messages)
                 return self.send_message(chatID, spam_response)
             
-            # Commandes de retour au menu (priorité absolue)
+            # === COMMANDES DE RETOUR AU MENU (PRIORITÉ ABSOLUE) ===
             if message_lower in ['menu', 'accueil', 'retour']:
+                print(f"🔄 Retour au menu forcé")
                 self.set_user_state(chatID, "menu")
                 return self.send_message(chatID, self.get_main_menu())
             
-            # Salutations seulement si état menu
+            # === SALUTATIONS SEULEMENT SI ÉTAT MENU ===
             if current_state == "menu":
                 if any(word in message_lower for word in ['bonjour', 'bonsoir', 'salut', 'hello', 'hi']):
                     return self.send_message(chatID, self.get_main_menu())
@@ -334,12 +363,12 @@ Merci pour votre patience."""
                 if "j'ai une question" in message_lower:
                     return self.send_message(chatID, self.get_main_menu())
             
-            # Politesse (sauf si transféré)
+            # === POLITESSE (sauf si transféré) ===
             if current_state not in ["transferred_to_sav", "transferred_to_human"]:
                 if message_lower in ['merci', 'thank you', 'thanks']:
                     return self.send_message(chatID, "Je vous en prie 😊")
             
-            # Gestion des bugs (sauf si transféré)
+            # === GESTION DES BUGS (sauf si transféré) ===
             if current_state not in ["transferred_to_sav", "transferred_to_human"]:
                 if any(word in message_lower for word in ['ça marche pas', 'marche pas', 'bug', 'ne fonctionne pas', 'problème connexion', 'je n\'arrive pas', 'pas connecter']):
                     self.set_user_state(chatID, "menu")
@@ -372,7 +401,7 @@ Merci pour votre patience."""
                     return self.send_message(chatID, self.handle_human_advisor(chatID))
                     
             elif current_state == "services_selection":
-                # CORRECTION PROBLÈME 1: L'utilisateur choisit un service
+                # L'utilisateur a choisi un service
                 print(f"🎯 Recherche service pour: '{message_lower}'")
                 service_info = self.get_service_info(message_lower)
                 
@@ -385,19 +414,25 @@ Merci pour votre patience."""
                     return self.send_message(chatID, "❌ Service non trouvé. " + self.get_services_selection())
                 
             elif current_state == "waiting_name":
-                # CORRECTION PROBLÈME 2: L'utilisateur envoie son nom
+                # CORRECTION OPTION 2 : L'utilisateur envoie son nom (pas d'image)
+                if message_lower == "image":
+                    return self.send_message(chatID, "Merci pour l'image, mais nous avons d'abord besoin de votre **nom et prénom**. Veuillez les taper en texte.")
+                
                 print(f"👤 Nom reçu: {message_body}")
                 self.set_user_data(chatID, "customer_name", message_body)
                 self.set_user_state(chatID, "waiting_payment_screenshot")
                 
-                return self.send_message(chatID, """Merci pour votre nom.
+                return self.send_message(chatID, f"""Merci {message_body} ✅
 
 Maintenant, veuillez envoyer la **capture d'écran de votre paiement**.
 
 Dès réception, nous transmettrons le tout au service technique.""")
                 
             elif current_state == "waiting_payment_screenshot":
-                # CORRECTION PROBLÈME 2: L'utilisateur envoie la capture de paiement
+                # CORRECTION OPTION 2 : L'utilisateur envoie la capture de paiement
+                if message_lower != "image":
+                    return self.send_message(chatID, "Nous attendons la **capture d'écran de votre paiement**. Veuillez envoyer l'image.")
+                
                 print(f"💳 Capture paiement reçue de: {chatID}")
                 customer_name = self.get_user_data(chatID, "customer_name", "Non fourni")
                 
@@ -410,13 +445,23 @@ Dès réception, nous transmettrons le tout au service technique.""")
                 }, "no_access")
                 
                 self.set_user_state(chatID, "transferred_to_sav")
-                response = """✅ Vos informations ont bien été transmises au service technique.
+                response = f"""✅ Parfait ! Nous avons bien reçu vos informations :
 
-⏳ Un agent va vous répondre dans un délai estimé de **moins de 40 minutes** (entre 10h et 22h)."""
+👤 Nom : {customer_name}
+💳 Capture de paiement : Reçue
+
+📤 Votre dossier a été transmis à notre service technique.
+
+⏳ Un agent va vous répondre dans un délai estimé de **moins de 40 minutes** (entre 10h et 22h).
+
+Merci pour votre patience."""
                 return self.send_message(chatID, response)
                 
             elif current_state == "waiting_screenshot":
-                # CORRECTION PROBLÈME 3: L'utilisateur envoie une capture du problème
+                # CORRECTION OPTION 3 : L'utilisateur envoie une capture du problème
+                if message_lower != "image":
+                    return self.send_message(chatID, "Nous attendons une **capture d'écran** de votre problème. Veuillez envoyer l'image.")
+                
                 print(f"📸 Capture technique reçue de: {chatID}")
                 
                 # Envoyer au SAV avec numéro du client
@@ -427,23 +472,27 @@ Dès réception, nous transmettrons le tout au service technique.""")
                 }, "technical")
                 
                 self.set_user_state(chatID, "transferred_to_sav")
-                response = """✅ Merci, nous avons transmis votre problème à notre service technique.
+                response = """✅ Merci ! Nous avons bien reçu votre capture d'écran.
 
-⏳ Un agent vous répondra sous peu (délai moyen : - de 40 minutes, entre 10h et 22h)."""
+📤 Votre problème a été transmis à notre service technique.
+
+⏳ Un agent vous répondra sous peu (délai moyen : moins de 40 minutes, entre 10h et 22h).
+
+Nous allons régler votre problème rapidement."""
                 return self.send_message(chatID, response)
                 
             elif current_state == "transferred_to_sav" or current_state == "transferred_to_human":
-                # L'utilisateur est déjà transféré : SILENCE TOTAL
-                print(f"🔇 Utilisateur {chatID} transféré - silence complet")
-                return "TransferredSilent"
+                # L'utilisateur est déjà transféré : silence (géré par le spam ci-dessus)
+                print(f"🔇 Utilisateur {chatID} transféré - traité par la gestion du spam")
+                return "TransferredHandledBySpam"
             
-            # Message non reconnu (sauf si transféré)
+            # === MESSAGE NON RECONNU (sauf si transféré) ===
             if current_state not in ["transferred_to_sav", "transferred_to_human"]:
                 print(f"❓ Message non reconnu, retour au menu")
                 self.set_user_state(chatID, "menu")
                 return self.send_message(chatID, self.get_main_menu())
             
-            # Si transféré et message non reconnu : silence
+            # Si transféré et message non reconnu : déjà géré par le spam
             return "TransferredSilent"
         
         return 'NoData'
