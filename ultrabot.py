@@ -136,7 +136,7 @@ class ultraChatBot():
 
     def send_to_sav(self, client_info, problem_type="general"):
         """Envoie une alerte au SAV WhatsApp +221770184531"""
-        sav_number = "+221770184531@c.us"
+        sav_number = "+22991680782@c.us"
         client_phone = client_info.get('phone', 'Inconnu')
         
         # Messages clairs pour le SAV
