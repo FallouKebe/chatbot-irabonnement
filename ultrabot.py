@@ -134,27 +134,59 @@ class ultraChatBot():
         answer = self.send_requests('messages/chat', data)
         return answer
 
+    def format_phone_number(self, whatsapp_id):
+        """NOUVEAU: Formate le numéro WhatsApp pour le SAV"""
+        # Supprimer @c.us et ajouter +
+        if "@c.us" in whatsapp_id:
+            clean_number = whatsapp_id.replace("@c.us", "")
+            formatted_number = f"+{clean_number}"
+            print(f"📱 Numéro formaté: {whatsapp_id} → {formatted_number}")
+            return formatted_number
+        return whatsapp_id
+
     def send_to_sav(self, client_info, problem_type="general"):
-        """Envoie une alerte au SAV WhatsApp +22991680782"""
-        sav_number = "+22991680782@c.us"
-        client_phone = client_info.get('phone', 'Inconnu')
+        """Envoie une alerte au SAV WhatsApp (individuel ou groupe)"""
+        # # OPTION 1: Envoyer à un numéro individuel
+        # sav_destination = "+221770184531@c.us"
+        
+        # OPTION 2: Envoyer à un groupe WhatsApp (recommandé)
+        # Remplacez par l'ID de votre groupe SAV
+        sav_destination = "120363366576958989@g.us"  # Format: 1234567890-1234567890@g.us
+        
+        # OPTION 3: Envoyer aux deux (groupe + responsable)
+        # sav_destination = ["+221770184531@c.us", "VOTRE_GROUPE_SAV_ID@g.us"]
+        client_phone_raw = client_info.get('phone', 'Inconnu')
+        
+        # NOUVEAU: Formater le numéro pour le SAV
+        client_phone_formatted = self.format_phone_number(client_phone_raw)
         
         # Messages clairs pour le SAV
         if problem_type == "no_access":
             client_name = client_info.get('name', 'Non fourni')
-            message = f"🚨 CLIENT SANS ACCES\n\nNumero: {client_phone}\nNom: {client_name}\nProbleme: Commande payee mais acces non recu\nCapture: Reçue\n\n⚡ A traiter rapidement SVP"
+            message = f"🚨 CLIENT SANS ACCES\n\nNumero: {client_phone_formatted}\nNom: {client_name}\nProbleme: Commande payee mais acces non recu\nCapture: Reçue\n\n⚡ A traiter rapidement SVP"
             
         elif problem_type == "technical":
-            message = f"🔧 PROBLEME TECHNIQUE\n\nNumero: {client_phone}\nProbleme: Dysfonctionnement signale\nCapture: Reçue\n\n⚡ A resoudre rapidement SVP"
+            message = f"🔧 PROBLEME TECHNIQUE\n\nNumero: {client_phone_formatted}\nProbleme: Dysfonctionnement signale\nCapture: Reçue\n\n⚡ A resoudre rapidement SVP"
             
         elif problem_type == "conseiller_humain":
-            message = f"📞 DEMANDE CONSEILLER\n\nNumero: {client_phone}\nDemande: Contact conseiller humain\n\n⚡ A traiter rapidement SVP"
+            message = f"📞 DEMANDE CONSEILLER\n\nNumero: {client_phone_formatted}\nDemande: Contact conseiller humain\n\n⚡ A traiter rapidement SVP"
             
         else:
-            message = f"❓ DEMANDE CLIENT\n\nNumero: {client_phone}\nType: {problem_type}\n\n⚡ A traiter SVP"
-            
-        print(f"📤 Envoi alerte SAV: {message}")
-        return self.send_message(sav_number, message)
+            message = f"❓ DEMANDE CLIENT\n\nNumero: {client_phone_formatted}\nType: {problem_type}\n\n⚡ A traiter SVP"
+        
+        # NOUVEAU: Envoyer à une ou plusieurs destinations
+        if isinstance(sav_destination, list):
+            # Envoyer à plusieurs destinations
+            results = []
+            for destination in sav_destination:
+                print(f"📤 Envoi alerte SAV vers {destination}: {message}")
+                result = self.send_message(destination, message)
+                results.append(result)
+            return results
+        else:
+            # Envoyer à une seule destination
+            print(f"📤 Envoi alerte SAV vers {sav_destination}: {message}")
+            return self.send_message(sav_destination, message)
 
     def get_main_menu(self):
         return """Bienvenue chez irabonnement.com 👋
