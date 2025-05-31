@@ -587,19 +587,19 @@ Merci pour votre patience."""
             print(f"📱 Message reçu de {chatID}: {message_body}")
             print(f"🔄 État actuel: {self.get_user_state(chatID)}")
             
-            # NOUVEAU: Vérifier expiration du silence (2h)
+            # NOUVEAU: Vérifier expiration du silence (2h) avant vérification du mode silence
             if self.check_silence_expiration(chatID):
-                # Utilisateur réactivé, traiter le message normalement
-                pass
+                # Utilisateur réactivé, continuer le traitement normal
+                current_state = self.get_user_state(chatID)  # Recharger l'état après expiration
             
-            # Vérifier si en mode silence
+            # PRIORITÉ #1 : Vérifier si en mode silence (DOIT ÊTRE EN PREMIER)
             current_state = self.get_user_state(chatID)
             if current_state == "silence_mode":
                 silence_reason = self.get_user_data(chatID, "silence_reason", "unknown")
                 print(f"🔇 UTILISATEUR {chatID} EN MODE SILENCE ({silence_reason}) - AUCUNE RÉPONSE")
                 return "SilenceMode"
             
-            # PRIORITÉ #1 : Commande "menu" (réactive toujours SAUF si SAV humain actif)
+            # PRIORITÉ #2 : Commande "menu" (réactive toujours SAUF si SAV humain actif)
             if message_lower in ['menu', 'accueil', 'retour', 'retourner au menu']:
                 silence_reason = self.get_user_data(chatID, "silence_reason", None)
                 if silence_reason == "human_sav_active":
@@ -614,7 +614,7 @@ Merci pour votre patience."""
                     self.user_sessions[chatID]["messages"] = []
                 return self.send_message(chatID, self.get_main_menu())
             
-            # PRIORITÉ #2 : Gestion du spam (avec exceptions pour politesse)
+            # PRIORITÉ #3 : Gestion du spam (avec exceptions pour politesse)
             spam_status = self.check_spam(chatID)
             
             # NOUVEAU: Si utilisateur transféré ET message poli, réponse polie au lieu d'anti-spam
@@ -641,26 +641,12 @@ Merci pour votre patience."""
                 print(f"⚠️ Utilisateur {chatID} normal - anti-spam")
                 return self.send_message(chatID, spam_response)
             
-            # PRIORITÉ #3 : Salutations (seulement si état menu)
-            if current_state == "menu":
-                if any(word in message_lower for word in ['bonjour', 'bonsoir', 'salut', 'hello', 'hi']):
-                    print(f"👋 Salutation détectée: {message_lower}")
-                    return self.send_message(chatID, self.get_main_menu())
-                
-                if "je vous contacte depuis le site irabonnement" in message_lower:
-                    print(f"🌐 Message site détecté")
-                    return self.send_message(chatID, self.get_main_menu())
-                    
-                if "j'ai une question" in message_lower:
-                    print(f"❓ Question générique détectée")
-                    return self.send_message(chatID, self.get_main_menu())
-            
-            # PRIORITÉ #4 : Politesse (sauf si transféré)
+            # PRIORITÉ #4 : Politesse (sauf si transféré ou en silence)
             if current_state not in ["transferred_to_sav", "transferred_to_human", "silence_mode"]:
                 if message_lower in ['merci', 'thank you', 'thanks']:
                     return self.send_message(chatID, "Je vous en prie 😊")
             
-            # PRIORITÉ #5 : Gestion des bugs (sauf si transféré)
+            # PRIORITÉ #5 : Gestion des bugs (sauf si transféré ou en silence)
             if current_state not in ["transferred_to_sav", "transferred_to_human", "silence_mode"]:
                 if any(word in message_lower for word in ['ça marche pas', 'marche pas', 'bug', 'ne fonctionne pas', 'problème connexion', 'je n\'arrive pas', 'pas connecter']):
                     self.set_user_state(chatID, "menu")
