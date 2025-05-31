@@ -43,7 +43,7 @@ class ultraChatBot():
             "Patience svp, votre insistance rallonge les délais de réponse. Nous vous aiderons."
         ]
 
-        # NOUVEAU : Messages d'avertissement menu
+        # NOUVEAU : Messages d'avertissement menu (seront complétés avec le menu)
         self.menu_warning_messages = {
             "first": "Veuillez répondre à partir du menu que je vous affiche. Tapez simplement le numéro de votre choix (1, 2, 3, 4, 5 ou 6). Toute autre réponse ne peut pas être comprise par mon système automatique.",
             "second": "N'exagérez pas, merci de répondre à partir du menu en tapant le numéro correspondant à votre demande. C'est la seule façon pour moi de vous aider efficacement.",
@@ -325,9 +325,16 @@ La livraison est automatique 📩"""
 Merci pour votre patience."""
 
     def is_in_active_flow(self, chatID):
-        """Vérifie si l'utilisateur est dans un flux actif"""
+        """Vérifie si l'utilisateur est dans un flux actif (pour éviter le spam)"""
         state = self.get_user_state(chatID)
         active_states = ["waiting_name", "waiting_payment_screenshot", "waiting_screenshot", "services_selection", "verification_email"]
+        
+        # NOUVEAU: Si l'utilisateur vient de recevoir un avertissement menu, pas de spam check
+        warnings = self.get_user_data(chatID, "menu_warnings", 0)
+        if state == "menu" and warnings > 0:
+            print(f"🔄 Utilisateur {chatID} avec avertissement menu - pas de spam check")
+            return True
+            
         return state in active_states
 
     def check_spam(self, chatID):
@@ -406,6 +413,35 @@ Merci pour votre patience."""
         self.user_sessions[chatID]["data"][key] = value
         self.save_sessions()
 
+    def is_polite_cooperative_message(self, message_lower):
+        """NOUVEAU: Détecte les messages polis/coopératifs qui ne doivent pas déclencher anti-spam"""
+        polite_messages = [
+            "merci", "thank you", "thanks", "merci beaucoup",
+            "d'accord", "ok", "okay", "ça marche", "parfait",
+            "je reste à l'écoute", "j'attends", "je patiente",
+            "très bien", "c'est bon", "entendu", "compris",
+            "je vous remercie", "merci pour votre aide",
+            "j'ai compris", "c'est clair", "pas de problème",
+            "je comprends", "bien reçu", "noté"
+        ]
+        
+        for polite in polite_messages:
+            if polite in message_lower:
+                return True
+        return False
+
+    def get_polite_response_for_transferred(self):
+        """NOUVEAU: Réponses polies pour clients transférés qui sont coopératifs"""
+        polite_responses = [
+            "Je vous en prie 😊 Notre équipe prend bien soin de votre dossier.",
+            "De rien ! Vous êtes entre de bonnes mains, ne vous inquiétez pas.",
+            "Avec plaisir 😊 Notre service technique va rapidement s'occuper de vous.",
+            "Je vous en prie ! Votre patience est très appréciée.",
+            "Merci pour votre compréhension 😊 Tout va bien se passer.",
+            "De rien ! Notre équipe est très efficace, vous aurez une réponse bientôt."
+        ]
+        return random.choice(polite_responses)
+
     def is_image_message(self, message):
         """Détecte si le message est une image"""
         return message.get('type') == 'image'
@@ -445,21 +481,27 @@ Merci pour votre patience."""
         return False
 
     def handle_menu_warning(self, chatID, message_lower):
-        """CORRIGÉ: Gère les avertissements pour réponses hors menu (PAS pour salutations)"""        
+        """CORRIGÉ: Gère les avertissements + affiche le menu directement"""        
         warnings = self.get_user_data(chatID, "menu_warnings", 0)
         
         if warnings == 0:
-            # Premier avertissement
+            # Premier avertissement + menu
             self.set_user_data(chatID, "menu_warnings", 1)
-            return self.send_message(chatID, self.menu_warning_messages["first"])
+            message = f"""{self.menu_warning_messages["first"]}
+
+{self.get_main_menu()}"""
+            return self.send_message(chatID, message)
             
         elif warnings == 1:
-            # Deuxième avertissement
+            # Deuxième avertissement + menu
             self.set_user_data(chatID, "menu_warnings", 2)
-            return self.send_message(chatID, self.menu_warning_messages["second"])
+            message = f"""{self.menu_warning_messages["second"]}
+
+{self.get_main_menu()}"""
+            return self.send_message(chatID, message)
             
         else:
-            # Troisième fois : mode silence
+            # Troisième fois : mode silence (pas de menu)
             self.activate_silence_mode(chatID, "non_cooperative")
             return self.send_message(chatID, self.menu_warning_messages["final"])
 
@@ -531,8 +573,14 @@ Merci pour votre patience."""
                     self.user_sessions[chatID]["messages"] = []
                 return self.send_message(chatID, self.get_main_menu())
             
-            # PRIORITÉ #2 : Gestion du spam
+            # PRIORITÉ #2 : Gestion du spam (avec exceptions pour politesse)
             spam_status = self.check_spam(chatID)
+            
+            # NOUVEAU: Si utilisateur transféré ET message poli, réponse polie au lieu d'anti-spam
+            if current_state in ["transferred_to_sav", "transferred_to_human"]:
+                if self.is_polite_cooperative_message(message_lower):
+                    print(f"😊 Message poli détecté pour utilisateur transféré: {message_lower}")
+                    return self.send_message(chatID, self.get_polite_response_for_transferred())
             
             if spam_status == "transferred_total_silence":
                 print(f"🔇 Utilisateur {chatID} transféré - silence total")
@@ -588,15 +636,27 @@ Merci pour votre patience."""
                 # Messages spécifiques du site (toujours valides)
                 if "je vous contacte depuis le site irabonnement" in message_lower:
                     print(f"🌐 Message site détecté")
+                    # Reset warnings et spam pour messages site
+                    self.set_user_data(chatID, "menu_warnings", 0)
+                    if chatID in self.user_sessions:
+                        self.user_sessions[chatID]["messages"] = []
                     return self.send_message(chatID, self.get_main_menu())
                     
                 if "j'ai une question" in message_lower:
                     print(f"❓ Question générique détectée")
+                    # Reset warnings et spam pour questions génériques
+                    self.set_user_data(chatID, "menu_warnings", 0)
+                    if chatID in self.user_sessions:
+                        self.user_sessions[chatID]["messages"] = []
                     return self.send_message(chatID, self.get_main_menu())
                 
                 # PRIORITÉ: Si c'est une salutation, réafficher le menu (PAS d'avertissement)
                 if self.is_salutation(message_lower):
                     print(f"👋 Salutation détectée en état menu: {message_lower}")
+                    # Reset warnings et spam messages pour salutations aussi
+                    self.set_user_data(chatID, "menu_warnings", 0)
+                    if chatID in self.user_sessions:
+                        self.user_sessions[chatID]["messages"] = []
                     return self.send_message(chatID, self.get_main_menu())
                 
                 # Vérifier si réponse valide au menu
@@ -604,8 +664,11 @@ Merci pour votre patience."""
                     print(f"❌ Réponse hors menu détectée (pas une salutation)")
                     return self.handle_menu_warning(chatID, message_lower)
                 
-                # Reset des warnings si réponse valide du menu
+                # Reset des warnings et messages spam si réponse valide du menu
                 self.set_user_data(chatID, "menu_warnings", 0)
+                # NOUVEAU: Reset aussi les messages pour éviter faux positifs spam
+                if chatID in self.user_sessions:
+                    self.user_sessions[chatID]["messages"] = []
                 
                 if message_lower == "1" or "comment ça fonctionne" in message_lower:
                     self.set_user_state(chatID, "services_selection")
