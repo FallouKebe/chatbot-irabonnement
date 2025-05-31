@@ -12,35 +12,51 @@ class ultraChatBot():
         self.ultraAPIUrl = 'https://api.ultramsg.com/instance114147/'
         self.token = 'e9gigjx981vwnnzh'
         
-        # Fichier pour sauvegarder les sessions
+        # SOLUTION PERSISTANCE : Fichier pour sauvegarder les sessions
         self.sessions_file = 'user_sessions.json'
         self.user_sessions = self.load_sessions()
         
-        # Système de déduplication des messages
+        # NOUVEAU : Système de déduplication des messages
         self.processed_messages_file = 'processed_messages.json'
         self.processed_messages = self.load_processed_messages()
         
-        # Messages anti-spam
+        # Messages anti-spam pour utilisateurs normaux
         self.anti_spam_messages = [
             "Merci de patienter 🙏 Votre demande est en cours de traitement.",
             "Plus vous envoyez de messages, plus le temps de traitement est rallongé.",
             "Pas d'inquiétude, vous êtes bien pris en charge.",
             "Nous traitons les demandes par ordre d'arrivée.",
-            "Veuillez patienter, nous analysons votre demande."
+            "Veuillez patienter, nous analysons votre demande.",
+            "Merci pour votre patience, nous vous répondons au plus vite.",
+            "Votre demande est importante pour nous, merci de patienter.",
+            "Nous prenons en compte votre message, merci de ne pas spammer.",
+            "Patience svp, notre équipe traite votre demande.",
+            "Merci d'éviter les messages répétés, nous vous traitons."
         ]
         
+        # Messages anti-spam pour utilisateurs transférés
+        self.transferred_spam_messages = [
+            "Plus vous envoyez de messages, plus le délai de traitement sera rallongé. ⏳ Merci de patienter.",
+            "Votre demande est prise en charge, merci de patienter sans insister. 🙏 Nous allons régler votre problème.",
+            "Chaque message supplémentaire retarde le traitement de votre dossier. Patience svp.",
+            "Notre équipe vous contactera, inutile d'envoyer plus de messages. Nous réglons votre problème.",
+            "Patience svp, votre insistance rallonge les délais de réponse. Nous vous aiderons."
+        ]
+
         # Messages d'avertissement menu
         self.menu_warning_messages = {
-            "first": "Veuillez répondre à partir du menu que je vous affiche. Tapez simplement le numéro de votre choix (1, 2, 3, 4, 5 ou 6).",
-            "second": "Merci de répondre à partir du menu en tapant le numéro correspondant à votre demande.",
+            "first": "Veuillez répondre à partir du menu que je vous affiche. Tapez simplement le numéro de votre choix (1, 2, 3, 4, 5 ou 6). Toute autre réponse ne peut pas être comprise par mon système automatique.",
+            "second": "N'exagérez pas, merci de répondre à partir du menu en tapant le numéro correspondant à votre demande. C'est la seule façon pour moi de vous aider efficacement.",
             "final": "Ok, comme vous voulez. Si vous ne souhaitez pas coopérer, je reste en silence. Vous pourrez me reparler dans 2 heures ou taper 'menu' à tout moment."
         }
 
     def load_processed_messages(self):
+        """Charge la liste des messages déjà traités"""
         try:
             if os.path.exists(self.processed_messages_file):
                 with open(self.processed_messages_file, 'r', encoding='utf-8') as f:
                     messages = json.load(f)
+                    # Nettoyer les anciens messages (plus de 24h)
                     current_time = time.time()
                     cleaned = {k: v for k, v in messages.items() if current_time - v < 86400}
                     if len(cleaned) != len(messages):
@@ -52,6 +68,7 @@ class ultraChatBot():
             return {}
 
     def save_processed_messages(self, messages=None):
+        """Sauvegarde la liste des messages traités"""
         try:
             if messages is None:
                 messages = self.processed_messages
@@ -61,6 +78,7 @@ class ultraChatBot():
             print(f"❌ Erreur sauvegarde messages traités: {e}")
 
     def is_message_already_processed(self, message):
+        """Vérifie si ce message a déjà été traité"""
         message_id = message.get('id', '')
         if message_id and message_id in self.processed_messages:
             print(f"🔄 Message déjà traité: {message_id}")
@@ -68,12 +86,15 @@ class ultraChatBot():
         return False
 
     def mark_message_as_processed(self, message):
+        """Marque un message comme traité"""
         message_id = message.get('id', '')
         if message_id:
             self.processed_messages[message_id] = time.time()
             self.save_processed_messages()
+            print(f"✅ Message marqué comme traité: {message_id}")
 
     def load_sessions(self):
+        """Charge les sessions depuis le fichier JSON"""
         try:
             if os.path.exists(self.sessions_file):
                 with open(self.sessions_file, 'r', encoding='utf-8') as f:
@@ -88,6 +109,7 @@ class ultraChatBot():
             return {}
 
     def save_sessions(self):
+        """Sauvegarde les sessions dans le fichier JSON"""
         try:
             with open(self.sessions_file, 'w', encoding='utf-8') as f:
                 json.dump(self.user_sessions, f, ensure_ascii=False, indent=2)
@@ -107,80 +129,112 @@ class ultraChatBot():
         return answer
 
     def format_phone_number(self, whatsapp_id):
+        """Formate le numéro WhatsApp pour le SAV"""
         if "@c.us" in whatsapp_id:
             clean_number = whatsapp_id.replace("@c.us", "")
             formatted_number = f"+{clean_number}"
+            print(f"📱 Numéro formaté: {whatsapp_id} → {formatted_number}")
             return formatted_number
         return whatsapp_id
 
     def send_to_sav(self, client_info, problem_type="general"):
+        """Envoie une alerte au SAV WhatsApp"""
         sav_destination = "120363366576958989@g.us"
         client_phone_raw = client_info.get('phone', 'Inconnu')
         client_phone_formatted = self.format_phone_number(client_phone_raw)
         
+        # Messages clairs pour le SAV
         if problem_type == "no_access":
             client_name = client_info.get('name', 'Non fourni')
             message = f"🚨 CLIENT SANS ACCES\n\nNumero: {client_phone_formatted}\nNom: {client_name}\nProbleme: Commande payee mais acces non recu\nCapture: Reçue\n\n⚡ A traiter rapidement SVP"
+            
         elif problem_type == "technical":
             message = f"🔧 PROBLEME TECHNIQUE\n\nNumero: {client_phone_formatted}\nProbleme: Dysfonctionnement signale\nCapture: Reçue\n\n⚡ A resoudre rapidement SVP"
+            
         elif problem_type == "conseiller_humain":
             message = f"📞 DEMANDE CONSEILLER\n\nNumero: {client_phone_formatted}\nDemande: Contact conseiller humain\n\n⚡ A traiter rapidement SVP"
+            
         else:
             message = f"❓ DEMANDE CLIENT\n\nNumero: {client_phone_formatted}\nType: {problem_type}\n\n⚡ A traiter SVP"
         
+        print(f"📤 Envoi alerte SAV vers {sav_destination}: {message}")
         return self.send_message(sav_destination, message)
 
-    def get_user_state(self, chatID):
-        if chatID not in self.user_sessions:
-            self.user_sessions[chatID] = {"state": "menu", "messages": [], "data": {}}
-        return self.user_sessions[chatID]["state"]
+    def check_sav_takeover(self, message):
+        """CORRIGÉ: Détecte si le SAV HUMAIN prend en charge (même numéro que bot mais fromMe=false)"""
+        message_from = message.get('from', '')
+        message_body = message.get('body', '').lower()
+        message_to = message.get('to', '')
+        from_me = message.get('fromMe', True)
+        
+        print(f"🔍 Vérification SAV - From: {message_from}, To: {message_to}, FromMe: {from_me}, Body: {message_body}")
+        
+        # Le SAV humain utilise le même numéro que le bot (22958131828@c.us)
+        # MAIS avec fromMe=false (alors que le bot automatique a fromMe=true)
+        bot_number = "22958131828@c.us"
+        
+        if message_from != bot_number:
+            print(f"📱 Message ne vient pas du numéro bot {bot_number} - ignoré")
+            return None
+        
+        if from_me:
+            print(f"📱 Message vient du bot automatique (fromMe=true) - ignoré pour SAV")
+            return None
+            
+        print(f"✅ Message SAV humain détecté (même numéro bot mais fromMe=false)")
+        
+        # PHRASES EXACTES POUR LES HUMAINS SAV
+        sav_phrases = [
+            "je prends votre demande en charge",    # PHRASE EXACTE DE VOTRE TEST
+            "je suis la sav qui vous prends en charge",
+            "je suis le sav qui vous prend en charge", 
+            "bonjour je suis votre conseiller",
+            "je suis votre conseiller",
+            "bonjour, je suis le sav",
+            "je vais m'occuper de vous personnellement",
+            "c'est moi qui vais traiter votre dossier",
+            "bonjour, je reprends votre demande",
+            "salut, je m'occupe de votre problème",
+            "je suis votre agent de support"
+        ]
+        
+        for phrase in sav_phrases:
+            if phrase in message_body:
+                # Le client à mettre en silence est le destinataire du message SAV
+                client_id = message_to
+                print(f"🎯 PHRASE SAV DÉTECTÉE: '{phrase}' → Client {client_id} mis en silence")
+                return client_id
+        
+        print(f"❌ Aucune phrase SAV trouvée dans: {message_body}")
+        return None
 
-    def set_user_state(self, chatID, state):
+    def check_silence_expiration(self, chatID):
+        """NOUVEAU: Vérifie si le mode silence a expiré (2h)"""
         if chatID not in self.user_sessions:
-            self.user_sessions[chatID] = {"messages": [], "data": {}}
-        self.user_sessions[chatID]["state"] = state
-        self.save_sessions()
+            return False
+            
+        silence_timestamp = self.get_user_data(chatID, "silence_timestamp", None)
+        if silence_timestamp:
+            current_time = time.time()
+            # 2 heures = 7200 secondes
+            if current_time - silence_timestamp > 7200:
+                print(f"⏰ Mode silence expiré pour {chatID} après 2h")
+                # Réinitialiser l'utilisateur
+                self.set_user_state(chatID, "menu")
+                self.set_user_data(chatID, "silence_timestamp", None)
+                self.set_user_data(chatID, "menu_warnings", 0)
+                return True
+        return False
 
-    def get_user_data(self, chatID, key, default=None):
-        if chatID not in self.user_sessions:
-            self.user_sessions[chatID] = {"state": "menu", "messages": [], "data": {}}
-        return self.user_sessions[chatID]["data"].get(key, default)
-
-    def set_user_data(self, chatID, key, value):
-        if chatID not in self.user_sessions:
-            self.user_sessions[chatID] = {"state": "menu", "messages": [], "data": {}}
-        self.user_sessions[chatID]["data"][key] = value
-        self.save_sessions()
-
-    def activate_silence_mode(self, chatID, reason="sav_active"):
+    def activate_silence_mode(self, chatID, reason="non_cooperative"):
+        """NOUVEAU: Active le mode silence pour un utilisateur"""
         self.set_user_state(chatID, "silence_mode")
         self.set_user_data(chatID, "silence_timestamp", time.time())
         self.set_user_data(chatID, "silence_reason", reason)
-        print(f"🔇 SILENCE ACTIVÉ pour {chatID} - Raison: {reason}")
-
-    def check_sav_command(self, message):
-        """Détecte les commandes SAV simples"""
-        message_body = message.get('body', '').strip()
-        
-        # Commande /sav - Met en silence le client de cette conversation
-        if message_body == '/sav':
-            client_number = message.get('to', '')  # Le destinataire = client à faire taire
-            if client_number:
-                print(f"🎯 COMMANDE SAV: /sav pour conversation avec {client_number}")
-                return ('sav_silence', client_number)
-        
-        # Commande /reactiver - Réactive le client de cette conversation  
-        elif message_body == '/reactiver':
-            client_number = message.get('to', '')
-            if client_number:
-                print(f"🎯 COMMANDE SAV: /reactiver pour conversation avec {client_number}")
-                return ('sav_reactivate', client_number)
-                
-        # Aide SAV
-        elif message_body == '/aide':
-            return ('help', None)
-        
-        return None
+        print(f"🔇 MODE SILENCE ACTIVÉ POUR {chatID} - RAISON: {reason}")
+        print(f"📊 État maintenant: {self.get_user_state(chatID)}")
+        print(f"💾 Session sauvegardée pour {chatID}")
+        self.save_sessions()
 
     def get_main_menu(self):
         return """Bienvenue chez irabonnement.com 👋
@@ -215,6 +269,7 @@ Quel produit souhaitez-vous comprendre ? Répondez simplement avec le nom du pro
 - HBO Max"""
 
     def get_service_info(self, service):
+        """Reconnaissance des noms de services"""
         service_lower = service.lower().strip()
         
         service_info = {
@@ -247,31 +302,242 @@ Quel produit souhaitez-vous comprendre ? Répondez simplement avec le nom du pro
         
         return "❌ Service non trouvé. Veuillez taper exactement un nom de la liste."
 
-    def is_image_message(self, message):
-        return message.get('type') == 'image'
+    def handle_email_verification_request(self, chatID):
+        """NOUVEAU: Demande de vérification email avant option 2"""
+        return """Avant tout, veuillez vérifier votre boîte mail et le numéro WhatsApp que vous avez fourni lors de l'abonnement.
+
+Les informations de connexion sont automatiquement envoyées à ces deux endroits.
+
+Si vous ne trouvez rien, revenez ici et répondez :
+
+1️⃣ J'ai trouvé, merci
+2️⃣ Je n'ai rien trouvé"""
+
+    def handle_technical_problem(self, chatID):
+        return """Désolé pour le désagrément 😥
+
+Pour mieux comprendre votre problème, merci de nous envoyer une **capture d'écran** du message ou de l'erreur rencontrée.
+
+Une fois reçu, nous le transmettrons au service technique."""
+
+    def handle_bug_solutions(self, chatID):
+        return """Désolé pour cela 😥
+
+Voici quelques vérifications de base :
+
+1️⃣ Désinstallez puis réinstallez l'application
+2️⃣ Redémarrez votre appareil  
+3️⃣ Assurez-vous d'avoir activé le VPN si nécessaire
+
+👉 Si cela ne fonctionne toujours pas, merci de nous envoyer une **capture d'écran** de l'erreur.
+
+Nous transmettrons à notre service technique."""
+
+    def handle_resubscription(self, chatID):
+        return """Merci de vous rendre sur notre site : https://irabonnement.com
+
+👉 Si votre abonnement est expiré, vous devrez commander un **nouveau compte**."""
+
+    def handle_new_purchase(self, chatID):
+        return """Parfait ✅
+
+Vous pouvez commander directement sur : https://irabonnement.com
+
+La livraison est automatique 📩"""
+
+    def handle_human_advisor(self, chatID):
+        """MODIFIÉ: Après alerte SAV, passage en silence total"""
+        self.send_to_sav({"phone": chatID}, "conseiller_humain")
+        
+        # NOUVEAU: Activer le silence total après alerte SAV
+        self.activate_silence_mode(chatID, "waiting_human_sav")
+        
+        return """Votre demande a été transmise à notre service client.
+
+⏳ Un conseiller va vous répondre dans un délai estimé de **moins de 40 minutes** (entre 10h et 22h).
+
+Merci pour votre patience."""
+
+    def is_in_active_flow(self, chatID):
+        """Vérifie si l'utilisateur est dans un flux actif (pour éviter le spam)"""
+        state = self.get_user_state(chatID)
+        active_states = ["waiting_name", "waiting_payment_screenshot", "waiting_screenshot", "services_selection", "verification_email"]
+        
+        # NOUVEAU: Si l'utilisateur vient de recevoir un avertissement menu, pas de spam check
+        warnings = self.get_user_data(chatID, "menu_warnings", 0)
+        if state == "menu" and warnings > 0:
+            print(f"🔄 Utilisateur {chatID} avec avertissement menu - pas de spam check")
+            return True
+            
+        return state in active_states
 
     def check_spam(self, chatID):
+        """Spam check intelligent"""
         current_time = time.time()
         
         if chatID not in self.user_sessions:
             self.user_sessions[chatID] = {"messages": [], "state": "menu", "data": {}}
         
+        current_state = self.get_user_state(chatID)
+        
+        # Si utilisateur dans un flux actif, PAS de spam check
+        if self.is_in_active_flow(chatID):
+            print(f"🔄 Utilisateur {chatID} dans flux actif - pas de spam check")
+            return False
+        
         # Ajouter le message actuel
         self.user_sessions[chatID]["messages"].append(current_time)
         
-        # Garder seulement les messages des 90 dernières secondes
-        self.user_sessions[chatID]["messages"] = [
-            msg_time for msg_time in self.user_sessions[chatID]["messages"] 
-            if current_time - msg_time < 90
+        # Si utilisateur transféré : spam après 3+ messages en 2 minutes
+        if current_state in ["transferred_to_sav", "transferred_to_human"]:
+            self.user_sessions[chatID]["messages"] = [
+                msg_time for msg_time in self.user_sessions[chatID]["messages"] 
+                if current_time - msg_time < 120
+            ]
+            
+            message_count = len(self.user_sessions[chatID]["messages"])
+            print(f"🔍 Spam check transféré - Messages: {message_count}")
+            
+            self.save_sessions()
+            
+            if message_count >= 6:
+                return "transferred_total_silence"
+            elif message_count >= 3:
+                return "transferred_spam"
+            else:
+                return "transferred_silent"
+        
+        # Utilisateur normal : spam = 3+ messages en 90 secondes
+        else:
+            self.user_sessions[chatID]["messages"] = [
+                msg_time for msg_time in self.user_sessions[chatID]["messages"] 
+                if current_time - msg_time < 90
+            ]
+            
+            message_count = len(self.user_sessions[chatID]["messages"])
+            print(f"🔍 Spam check normal - Messages: {message_count}")
+            
+            self.save_sessions()
+            
+            if message_count >= 3:
+                return "normal_spam"
+        
+        return False
+
+    def get_user_state(self, chatID):
+        if chatID not in self.user_sessions:
+            self.user_sessions[chatID] = {"state": "menu", "messages": [], "data": {}}
+        return self.user_sessions[chatID]["state"]
+
+    def set_user_state(self, chatID, state):
+        if chatID not in self.user_sessions:
+            self.user_sessions[chatID] = {"messages": [], "data": {}}
+        self.user_sessions[chatID]["state"] = state
+        print(f"🔄 État changé pour {chatID}: {state}")
+        self.save_sessions()
+
+    def get_user_data(self, chatID, key, default=None):
+        if chatID not in self.user_sessions:
+            self.user_sessions[chatID] = {"state": "menu", "messages": [], "data": {}}
+        return self.user_sessions[chatID]["data"].get(key, default)
+
+    def set_user_data(self, chatID, key, value):
+        if chatID not in self.user_sessions:
+            self.user_sessions[chatID] = {"state": "menu", "messages": [], "data": {}}
+        self.user_sessions[chatID]["data"][key] = value
+        self.save_sessions()
+
+    def is_polite_cooperative_message(self, message_lower):
+        """NOUVEAU: Détecte les messages polis/coopératifs qui ne doivent pas déclencher anti-spam"""
+        polite_messages = [
+            "merci", "thank you", "thanks", "merci beaucoup",
+            "d'accord", "ok", "okay", "ça marche", "parfait",
+            "je reste à l'écoute", "j'attends", "je patiente",
+            "très bien", "c'est bon", "entendu", "compris",
+            "je vous remercie", "merci pour votre aide",
+            "j'ai compris", "c'est clair", "pas de problème",
+            "je comprends", "bien reçu", "noté"
         ]
         
-        message_count = len(self.user_sessions[chatID]["messages"])
-        self.save_sessions()
-        
-        # Spam si 3+ messages en 90 secondes
-        if message_count >= 3:
-            return True
+        for polite in polite_messages:
+            if polite in message_lower:
+                return True
         return False
+
+    def get_polite_response_for_transferred(self):
+        """NOUVEAU: Réponses polies pour clients transférés qui sont coopératifs"""
+        polite_responses = [
+            "Je vous en prie 😊 Notre équipe prend bien soin de votre dossier.",
+            "De rien ! Vous êtes entre de bonnes mains, ne vous inquiétez pas.",
+            "Avec plaisir 😊 Notre service technique va rapidement s'occuper de vous.",
+            "Je vous en prie ! Votre patience est très appréciée.",
+            "Merci pour votre compréhension 😊 Tout va bien se passer.",
+            "De rien ! Notre équipe est très efficace, vous aurez une réponse bientôt."
+        ]
+        return random.choice(polite_responses)
+
+    def is_image_message(self, message):
+        """Détecte si le message est une image"""
+        return message.get('type') == 'image'
+
+    def is_valid_menu_response(self, message_lower):
+        """CORRIGÉ: Vérifie si la réponse est valide pour le menu (SANS salutations)"""
+        # Réponses valides du menu
+        valid_responses = [
+            "1", "2", "3", "4", "5", "6",
+            "comment ça fonctionne", "j'ai passé commande", "rien reçu",
+            "problème avec mon compte", "réabonner", "reabonner", 
+            "acheter un abonnement", "nouvelle commande", 
+            "conseiller humain", "agent"
+        ]
+        
+        # Vérifier réponses exactes du menu
+        if message_lower in valid_responses:
+            return True
+            
+        # Vérifier phrases contenues
+        for response in valid_responses:
+            if response in message_lower:
+                return True
+                
+        return False
+
+    def is_salutation(self, message_lower):
+        """NOUVEAU: Vérifie si c'est une salutation"""
+        salutations = [
+            "salut", "hey", "yo", "bonjour", "bonsoir", "hello", "hi",
+            "coucou", "bonne journée", "bonne soirée"
+        ]
+        
+        for salutation in salutations:
+            if salutation in message_lower:
+                return True
+        return False
+
+    def handle_menu_warning(self, chatID, message_lower):
+        """CORRIGÉ: Gère les avertissements + affiche le menu directement"""        
+        warnings = self.get_user_data(chatID, "menu_warnings", 0)
+        
+        if warnings == 0:
+            # Premier avertissement + menu
+            self.set_user_data(chatID, "menu_warnings", 1)
+            message = f"""{self.menu_warning_messages["first"]}
+
+{self.get_main_menu()}"""
+            return self.send_message(chatID, message)
+            
+        elif warnings == 1:
+            # Deuxième avertissement + menu
+            self.set_user_data(chatID, "menu_warnings", 2)
+            message = f"""{self.menu_warning_messages["second"]}
+
+{self.get_main_menu()}"""
+            return self.send_message(chatID, message)
+            
+        else:
+            # Troisième fois : mode silence (pas de menu)
+            self.activate_silence_mode(chatID, "non_cooperative")
+            return self.send_message(chatID, self.menu_warning_messages["final"])
 
     def Processingـincomingـmessages(self):
         if self.dict_messages != []:
@@ -287,176 +553,275 @@ Quel produit souhaitez-vous comprendre ? Répondez simplement avec le nom du pro
             # Ignorer les messages du groupe SAV
             sav_group_id = "120363366576958989@g.us"
             if message.get('from') == sav_group_id:
+                print(f"🔇 Message du groupe SAV ignoré - pas de traitement")
                 return 'SAVGroupIgnored'
             
-            # Ignorer nos propres messages automatiques
-            if message.get('fromMe'):
-                return 'FromMe'
-            
-            # PRIORITÉ #1: Détecter les commandes SAV (/sav, /reactiver, /aide)
-            sav_command = self.check_sav_command(message)
-            if sav_command:
-                command_type, client_number = sav_command
-                
-                if command_type == 'help':
-                    help_text = """🤖 **COMMANDES SAV**
-
-🔇 `/sav` - Met en silence le client de cette conversation
-🔊 `/reactiver` - Réactive le client de cette conversation  
-📖 `/aide` - Affiche cette aide
-
-**Utilisation:**
-• Tapez `/sav` directement dans la conversation client
-• Le silence se désactive automatiquement après 2h
-• Utilisez `/reactiver` pour réactiver avant les 2h"""
-                    return self.send_message(message.get('from'), help_text)
-                
-                elif command_type == 'sav_silence':
-                    self.activate_silence_mode(client_number, "sav_command")
-                    print(f"✅ Client {client_number} mis en SILENCE par /sav")
-                    # Pas de confirmation visible pour rester discret
-                    return 'SAVSilenceActivated'
-                
-                elif command_type == 'sav_reactivate':
-                    # Réactiver le client
-                    self.set_user_state(client_number, "menu")
-                    self.set_user_data(client_number, "silence_timestamp", None)
-                    self.set_user_data(client_number, "silence_reason", None)
-                    print(f"✅ Client {client_number} RÉACTIVÉ par /reactiver")
-                    # Pas de confirmation visible pour rester discret
-                    return 'SAVReactivated'
+            # CORRIGÉ: Détecter si un SAV humain prend en charge
+            sav_client = self.check_sav_takeover(message)
+            if sav_client:
+                print(f"🔇 SAV PRISE EN CHARGE - Silence activé pour client: {sav_client}")
+                self.activate_silence_mode(sav_client, "human_sav_active")
+                # Sauvegarder immédiatement
+                self.save_sessions()
+                return 'HumanSAVDetected'
             
             # Traitement des images et messages
             if self.is_image_message(message):
+                print(f"📸 Image reçue de {message['from']}")
                 chatID = message['from']
                 message_body = "[IMAGE]"
                 message_lower = "image"
             elif not message.get('body'):
+                print("Message vide reçu (pas une image)")
                 return 'EmptyMessage'
             else:
                 chatID = message['from']
                 message_body = message['body'].strip()
                 message_lower = message_body.lower()
+            
+            # Ignorer nos propres messages automatiques
+            if message['fromMe']:
+                print("Message envoyé par le bot automatique, ignoré")
+                return 'FromMe'
                 
             print(f"📱 Message reçu de {chatID}: {message_body}")
+            print(f"🔄 État actuel: {self.get_user_state(chatID)}")
             
-            current_state = self.get_user_state(chatID)
-            print(f"🔄 État actuel: {current_state}")
-            
-            # PRIORITÉ #2: Vérifier l'expiration du silence (2h) avant tout traitement
+            # NOUVEAU: Vérifier expiration du silence (2h) avant vérification du mode silence
             if self.check_silence_expiration(chatID):
-                # Client réactivé automatiquement, traiter le message normalement
-                current_state = self.get_user_state(chatID)  # Recharger l'état
-                print(f"⏰ Client réactivé automatiquement, nouvel état: {current_state}")
+                # Utilisateur réactivé, continuer le traitement normal
+                current_state = self.get_user_state(chatID)  # Recharger l'état après expiration
             
-            # PRIORITÉ #3: Vérifier si en mode silence
+            # PRIORITÉ #1 : Vérifier si en mode silence (DOIT ÊTRE EN PREMIER)
+            current_state = self.get_user_state(chatID)
             if current_state == "silence_mode":
                 silence_reason = self.get_user_data(chatID, "silence_reason", "unknown")
-                print(f"🔇 UTILISATEUR EN SILENCE ({silence_reason}) - AUCUNE RÉPONSE")
+                print(f"🔇 UTILISATEUR {chatID} EN MODE SILENCE ({silence_reason}) - AUCUNE RÉPONSE")
                 return "SilenceMode"
             
-            # PRIORITÉ #4: Commande "menu"
-            if message_lower in ['menu', 'accueil', 'retour']:
+            # PRIORITÉ #2 : Commande "menu" (réactive toujours SAUF si SAV humain actif)
+            if message_lower in ['menu', 'accueil', 'retour', 'retourner au menu']:
+                silence_reason = self.get_user_data(chatID, "silence_reason", None)
+                if silence_reason == "human_sav_active":
+                    print(f"🔇 Menu ignoré car SAV humain actif pour {chatID}")
+                    return "SilenceMode"
+                    
+                print(f"🔄 RETOUR AU MENU FORCÉ")
                 self.set_user_state(chatID, "menu")
-                # Reset spam counter
+                self.set_user_data(chatID, "menu_warnings", 0)  # Reset warnings
+                self.set_user_data(chatID, "silence_timestamp", None)  # Reset silence
                 if chatID in self.user_sessions:
                     self.user_sessions[chatID]["messages"] = []
                 return self.send_message(chatID, self.get_main_menu())
             
-            # PRIORITÉ #5: Réponses simples
-            if message_lower in ['merci', 'thank you', 'thanks']:
-                return self.send_message(chatID, "Je vous en prie 😊")
+            # PRIORITÉ #3 : Gestion du spam (avec exceptions pour politesse)
+            spam_status = self.check_spam(chatID)
             
-            if message_lower in ['bonjour', 'bonsoir', 'salut', 'hello', 'hi']:
-                return self.send_message(chatID, self.get_main_menu())
+            # NOUVEAU: Si utilisateur transféré ET message poli, réponse polie au lieu d'anti-spam
+            if current_state in ["transferred_to_sav", "transferred_to_human"]:
+                if self.is_polite_cooperative_message(message_lower):
+                    print(f"😊 Message poli détecté pour utilisateur transféré: {message_lower}")
+                    return self.send_message(chatID, self.get_polite_response_for_transferred())
             
-            # PRIORITÉ #6: Navigation selon l'état
+            if spam_status == "transferred_total_silence":
+                print(f"🔇 Utilisateur {chatID} transféré - silence total")
+                return "TransferredTotalSilence"
+                
+            elif spam_status == "transferred_spam":
+                response = random.choice(self.transferred_spam_messages)
+                print(f"⚠️ Utilisateur {chatID} transféré - message anti-spam")
+                return self.send_message(chatID, response)
+                
+            elif spam_status == "transferred_silent":
+                print(f"🔇 Utilisateur {chatID} transféré - silence simple")
+                return "TransferredSilent"
+                
+            elif spam_status == "normal_spam":
+                spam_response = random.choice(self.anti_spam_messages)
+                print(f"⚠️ Utilisateur {chatID} normal - anti-spam")
+                return self.send_message(chatID, spam_response)
+            
+            # PRIORITÉ #4 : Politesse (sauf si transféré ou en silence)
+            if current_state not in ["transferred_to_sav", "transferred_to_human", "silence_mode"]:
+                if message_lower in ['merci', 'thank you', 'thanks']:
+                    return self.send_message(chatID, "Je vous en prie 😊")
+            
+            # PRIORITÉ #5 : Gestion des bugs (sauf si transféré ou en silence)
+            if current_state not in ["transferred_to_sav", "transferred_to_human", "silence_mode"]:
+                if any(word in message_lower for word in ['ça marche pas', 'marche pas', 'bug', 'ne fonctionne pas', 'problème connexion', 'je n\'arrive pas', 'pas connecter']):
+                    self.set_user_state(chatID, "menu")
+                    return self.send_message(chatID, self.handle_bug_solutions(chatID))
+            
+            # === NAVIGATION SELON L'ÉTAT ===
             if current_state == "menu":
+                print(f"🏠 Traitement menu pour: {message_lower}")
+                
                 # Gestion des images non sollicitées
                 if message_lower == "image":
                     return self.send_message(chatID, "Je n'ai pas besoin d'image pour le moment. 😊\n\nVeuillez choisir une option du menu en tapant le numéro (1, 2, 3, 4, 5 ou 6).")
                 
-                # Options du menu
+                # Messages spécifiques du site (toujours valides)
+                if "je vous contacte depuis le site irabonnement" in message_lower:
+                    print(f"🌐 Message site détecté")
+                    # Reset warnings et spam pour messages site
+                    self.set_user_data(chatID, "menu_warnings", 0)
+                    if chatID in self.user_sessions:
+                        self.user_sessions[chatID]["messages"] = []
+                    return self.send_message(chatID, self.get_main_menu())
+                    
+                if "j'ai une question" in message_lower:
+                    print(f"❓ Question générique détectée")
+                    # Reset warnings et spam pour questions génériques
+                    self.set_user_data(chatID, "menu_warnings", 0)
+                    if chatID in self.user_sessions:
+                        self.user_sessions[chatID]["messages"] = []
+                    return self.send_message(chatID, self.get_main_menu())
+                
+                # PRIORITÉ: Si c'est une salutation, réafficher le menu (PAS d'avertissement)
+                if self.is_salutation(message_lower):
+                    print(f"👋 Salutation détectée en état menu: {message_lower}")
+                    # Reset warnings et spam messages pour salutations aussi
+                    self.set_user_data(chatID, "menu_warnings", 0)
+                    if chatID in self.user_sessions:
+                        self.user_sessions[chatID]["messages"] = []
+                    return self.send_message(chatID, self.get_main_menu())
+                
+                # Vérifier si réponse valide au menu
+                if not self.is_valid_menu_response(message_lower):
+                    print(f"❌ Réponse hors menu détectée (pas une salutation)")
+                    return self.handle_menu_warning(chatID, message_lower)
+                
+                # Reset des warnings et messages spam si réponse valide du menu
+                self.set_user_data(chatID, "menu_warnings", 0)
+                # NOUVEAU: Reset aussi les messages pour éviter faux positifs spam
+                if chatID in self.user_sessions:
+                    self.user_sessions[chatID]["messages"] = []
+                
                 if message_lower == "1" or "comment ça fonctionne" in message_lower:
                     self.set_user_state(chatID, "services_selection")
                     return self.send_message(chatID, self.get_services_selection())
                     
                 elif message_lower == "2" or "j'ai passé commande" in message_lower or "rien reçu" in message_lower:
-                    return self.send_message(chatID, """Avant tout, veuillez vérifier votre boîte mail et le numéro WhatsApp que vous avez fourni lors de l'abonnement.
-
-Les informations de connexion sont automatiquement envoyées à ces deux endroits.
-
-Si vous ne trouvez rien, revenez ici et tapez '2' à nouveau.""")
+                    # NOUVEAU: Demander vérification email d'abord
+                    self.set_user_state(chatID, "verification_email")
+                    return self.send_message(chatID, self.handle_email_verification_request(chatID))
                     
                 elif message_lower == "3" or "problème avec mon compte" in message_lower:
                     self.set_user_state(chatID, "waiting_screenshot")
-                    return self.send_message(chatID, """Désolé pour le désagrément 😥
-
-Pour mieux comprendre votre problème, merci de nous envoyer une **capture d'écran** du message ou de l'erreur rencontrée.
-
-Une fois reçu, nous le transmettrons au service technique.""")
+                    return self.send_message(chatID, self.handle_technical_problem(chatID))
                     
                 elif message_lower == "4" or "réabonner" in message_lower or "reabonner" in message_lower:
-                    return self.send_message(chatID, """Merci de vous rendre sur notre site : https://irabonnement.com
-
-👉 Si votre abonnement est expiré, vous devrez commander un **nouveau compte**.""")
+                    return self.send_message(chatID, self.handle_resubscription(chatID))
                     
-                elif message_lower == "5" or "acheter un abonnement" in message_lower:
-                    return self.send_message(chatID, """Parfait ✅
-
-Vous pouvez commander directement sur : https://irabonnement.com
-
-La livraison est automatique 📩""")
+                elif message_lower == "5" or "acheter un abonnement" in message_lower or "nouvelle commande" in message_lower:
+                    return self.send_message(chatID, self.handle_new_purchase(chatID))
                     
-                elif message_lower == "6" or "conseiller humain" in message_lower:
-                    self.send_to_sav({"phone": chatID}, "conseiller_humain")
-                    self.activate_silence_mode(chatID, "waiting_sav")
-                    return self.send_message(chatID, """Votre demande a été transmise à notre service client.
+                elif message_lower == "6" or "conseiller humain" in message_lower or "agent" in message_lower:
+                    return self.send_message(chatID, self.handle_human_advisor(chatID))
+                    
+            elif current_state == "verification_email":
+                # NOUVEAU: Gestion de la vérification email
+                if message_lower == "1" or "j'ai trouvé" in message_lower or "j'ai vu" in message_lower:
+                    self.set_user_state(chatID, "menu")
+                    return self.send_message(chatID, "Je vous en prie 😊\n\nTapez 'menu' si vous avez besoin d'autre chose.")
+                    
+                elif message_lower == "2" or "je n'ai rien trouvé" in message_lower or "j'ai pas" in message_lower:
+                    # Passer à la procédure normale (nom + capture)
+                    self.set_user_state(chatID, "waiting_name")
+                    return self.send_message(chatID, """D'accord, nous allons vous aider ✅
 
-⏳ Un conseiller va vous répondre dans un délai estimé de **moins de 40 minutes** (entre 10h et 22h).
+Veuillez d'abord nous envoyer votre **nom et prénom** utilisés lors de la commande.
 
-Merci pour votre patience.""")
-                
-                # Si pas une réponse valide du menu, vérifier spam puis avertissement
+Ensuite, nous vous demanderons la capture d'écran de votre paiement.""")
                 else:
-                    if self.check_spam(chatID):
-                        spam_response = random.choice(self.anti_spam_messages)
-                        return self.send_message(chatID, spam_response)
+                    return self.send_message(chatID, "Veuillez répondre par :\n\n1️⃣ J'ai trouvé, merci\n2️⃣ Je n'ai rien trouvé")
                     
-                    # Avertissement menu seulement si pas de spam
-                    warnings = self.get_user_data(chatID, "menu_warnings", 0)
-                    if warnings == 0:
-                        self.set_user_data(chatID, "menu_warnings", 1)
-                        return self.send_message(chatID, f"{self.menu_warning_messages['first']}\n\n{self.get_main_menu()}")
-                    elif warnings == 1:
-                        self.set_user_data(chatID, "menu_warnings", 2)
-                        return self.send_message(chatID, f"{self.menu_warning_messages['second']}\n\n{self.get_main_menu()}")
-                    else:
-                        self.activate_silence_mode(chatID, "non_cooperative")
-                        return self.send_message(chatID, self.menu_warning_messages['final'])
-                        
             elif current_state == "services_selection":
+                print(f"🎯 Recherche service pour: '{message_lower}'")
                 service_info = self.get_service_info(message_lower)
+                
                 if "❌ Service non trouvé" not in service_info:
+                    print(f"✅ Service trouvé, envoi info")
                     self.set_user_state(chatID, "menu")
                     return self.send_message(chatID, service_info + "\n\nTapez 'menu' pour retourner au menu principal.")
                 else:
+                    print(f"❌ Service non trouvé")
                     return self.send_message(chatID, "❌ Service non trouvé. " + self.get_services_selection())
-                    
+                
+            elif current_state == "waiting_name":
+                if message_lower == "image":
+                    return self.send_message(chatID, "Merci pour l'image, mais nous avons d'abord besoin de votre **nom et prénom** en texte.")
+                
+                print(f"👤 Nom reçu: {message_body}")
+                self.set_user_data(chatID, "customer_name", message_body)
+                self.set_user_state(chatID, "waiting_payment_screenshot")
+                
+                return self.send_message(chatID, f"""Merci {message_body} ✅
+
+Maintenant, veuillez envoyer la **capture d'écran de votre paiement**.
+
+Dès réception, nous transmettrons le tout au service technique.""")
+                
+            elif current_state == "waiting_payment_screenshot":
+                if message_lower != "image":
+                    return self.send_message(chatID, "Nous attendons la **capture d'écran de votre paiement**. Veuillez envoyer l'image.")
+                
+                print(f"💳 Capture paiement reçue de: {chatID}")
+                customer_name = self.get_user_data(chatID, "customer_name", "Non fourni")
+                
+                # Envoyer au SAV
+                self.send_to_sav({
+                    "phone": chatID,
+                    "name": customer_name,
+                    "payment_proof": "Capture de paiement reçue",
+                    "type": "no_access"
+                }, "no_access")
+                
+                self.set_user_state(chatID, "transferred_to_sav")
+                response = f"""✅ Parfait ! Nous avons bien reçu vos informations :
+
+👤 Nom : {customer_name}
+💳 Capture de paiement : Reçue
+
+📤 Votre dossier a été transmis à notre service technique.
+
+⏳ Un agent va vous répondre dans un délai estimé de moins de 40 minutes (entre 10h et 22h).
+
+Merci pour votre patience."""
+                return self.send_message(chatID, response)
+                
             elif current_state == "waiting_screenshot":
                 if message_lower != "image":
                     return self.send_message(chatID, "Nous attendons une **capture d'écran** de votre problème. Veuillez envoyer l'image.")
                 
-                self.send_to_sav({"phone": chatID, "problem": "Capture d'écran reçue"}, "technical")
+                print(f"📸 Capture technique reçue de: {chatID}")
+                
+                self.send_to_sav({
+                    "phone": chatID,
+                    "problem": "Capture d'écran du problème reçue",
+                    "type": "technical"
+                }, "technical")
+                
                 self.set_user_state(chatID, "transferred_to_sav")
-                return self.send_message(chatID, """✅ Merci ! Nous avons bien reçu votre capture d'écran.
+                response = """✅ Merci ! Nous avons bien reçu votre capture d'écran.
 
 📤 Votre problème a été transmis à notre service technique.
 
-⏳ Un agent vous répondra sous peu (délai moyen : moins de 40 minutes, entre 10h et 22h).""")
+⏳ Un agent vous répondra sous peu (délai moyen : moins de 40 minutes, entre 10h et 22h).
+
+Nous allons régler votre problème rapidement."""
+                return self.send_message(chatID, response)
+                
+            elif current_state in ["transferred_to_sav", "transferred_to_human"]:
+                print(f"🔇 Utilisateur {chatID} transféré - traité par la gestion du spam")
+                return "TransferredHandledBySpam"
             
-            # Message non reconnu
-            self.set_user_state(chatID, "menu")
-            return self.send_message(chatID, self.get_main_menu())
+            # Message non reconnu (sauf si transféré ou en silence)
+            if current_state not in ["transferred_to_sav", "transferred_to_human", "silence_mode"]:
+                print(f"❓ Message non reconnu, retour au menu")
+                self.set_user_state(chatID, "menu")
+                return self.send_message(chatID, self.get_main_menu())
+            
+            return "TransferredSilent"
         
         return 'NoData'
