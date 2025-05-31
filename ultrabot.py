@@ -614,45 +614,7 @@ Merci pour votre patience."""
                     self.user_sessions[chatID]["messages"] = []
                 return self.send_message(chatID, self.get_main_menu())
             
-            # PRIORITÉ #3 : Gestion du spam (avec exceptions pour politesse)
-            spam_status = self.check_spam(chatID)
-            
-            # NOUVEAU: Si utilisateur transféré ET message poli, réponse polie au lieu d'anti-spam
-            if current_state in ["transferred_to_sav", "transferred_to_human"]:
-                if self.is_polite_cooperative_message(message_lower):
-                    print(f"😊 Message poli détecté pour utilisateur transféré: {message_lower}")
-                    return self.send_message(chatID, self.get_polite_response_for_transferred())
-            
-            if spam_status == "transferred_total_silence":
-                print(f"🔇 Utilisateur {chatID} transféré - silence total")
-                return "TransferredTotalSilence"
-                
-            elif spam_status == "transferred_spam":
-                response = random.choice(self.transferred_spam_messages)
-                print(f"⚠️ Utilisateur {chatID} transféré - message anti-spam")
-                return self.send_message(chatID, response)
-                
-            elif spam_status == "transferred_silent":
-                print(f"🔇 Utilisateur {chatID} transféré - silence simple")
-                return "TransferredSilent"
-                
-            elif spam_status == "normal_spam":
-                spam_response = random.choice(self.anti_spam_messages)
-                print(f"⚠️ Utilisateur {chatID} normal - anti-spam")
-                return self.send_message(chatID, spam_response)
-            
-            # PRIORITÉ #4 : Politesse (sauf si transféré ou en silence)
-            if current_state not in ["transferred_to_sav", "transferred_to_human", "silence_mode"]:
-                if message_lower in ['merci', 'thank you', 'thanks']:
-                    return self.send_message(chatID, "Je vous en prie 😊")
-            
-            # PRIORITÉ #5 : Gestion des bugs (sauf si transféré ou en silence)
-            if current_state not in ["transferred_to_sav", "transferred_to_human", "silence_mode"]:
-                if any(word in message_lower for word in ['ça marche pas', 'marche pas', 'bug', 'ne fonctionne pas', 'problème connexion', 'je n\'arrive pas', 'pas connecter']):
-                    self.set_user_state(chatID, "menu")
-                    return self.send_message(chatID, self.handle_bug_solutions(chatID))
-            
-            # === NAVIGATION SELON L'ÉTAT ===
+            # PRIORITÉ #3 : NAVIGATION MENU (AVANT SPAM CHECK !)
             if current_state == "menu":
                 print(f"🏠 Traitement menu pour: {message_lower}")
                 
@@ -697,6 +659,8 @@ Merci pour votre patience."""
                 if chatID in self.user_sessions:
                     self.user_sessions[chatID]["messages"] = []
                 
+                print(f"✅ Réponse menu valide détectée: {message_lower} - Reset spam counter")
+                
                 if message_lower == "1" or "comment ça fonctionne" in message_lower:
                     self.set_user_state(chatID, "services_selection")
                     return self.send_message(chatID, self.get_services_selection())
@@ -718,8 +682,47 @@ Merci pour votre patience."""
                     
                 elif message_lower == "6" or "conseiller humain" in message_lower or "agent" in message_lower:
                     return self.send_message(chatID, self.handle_human_advisor(chatID))
-                    
-            elif current_state == "verification_email":
+            
+            # PRIORITÉ #4 : Gestion du spam (APRÈS navigation menu)
+            spam_status = self.check_spam(chatID)
+            
+            # NOUVEAU: Si utilisateur transféré ET message poli, réponse polie au lieu d'anti-spam
+            if current_state in ["transferred_to_sav", "transferred_to_human"]:
+                if self.is_polite_cooperative_message(message_lower):
+                    print(f"😊 Message poli détecté pour utilisateur transféré: {message_lower}")
+                    return self.send_message(chatID, self.get_polite_response_for_transferred())
+            
+            if spam_status == "transferred_total_silence":
+                print(f"🔇 Utilisateur {chatID} transféré - silence total")
+                return "TransferredTotalSilence"
+                
+            elif spam_status == "transferred_spam":
+                response = random.choice(self.transferred_spam_messages)
+                print(f"⚠️ Utilisateur {chatID} transféré - message anti-spam")
+                return self.send_message(chatID, response)
+                
+            elif spam_status == "transferred_silent":
+                print(f"🔇 Utilisateur {chatID} transféré - silence simple")
+                return "TransferredSilent"
+                
+            elif spam_status == "normal_spam":
+                spam_response = random.choice(self.anti_spam_messages)
+                print(f"⚠️ Utilisateur {chatID} normal - anti-spam")
+                return self.send_message(chatID, spam_response)
+            
+            # PRIORITÉ #5 : Politesse (sauf si transféré ou en silence)
+            if current_state not in ["transferred_to_sav", "transferred_to_human", "silence_mode"]:
+                if message_lower in ['merci', 'thank you', 'thanks']:
+                    return self.send_message(chatID, "Je vous en prie 😊")
+            
+            # PRIORITÉ #6 : Gestion des bugs (sauf si transféré ou en silence)
+            if current_state not in ["transferred_to_sav", "transferred_to_human", "silence_mode"]:
+                if any(word in message_lower for word in ['ça marche pas', 'marche pas', 'bug', 'ne fonctionne pas', 'problème connexion', 'je n\'arrive pas', 'pas connecter']):
+                    self.set_user_state(chatID, "menu")
+                    return self.send_message(chatID, self.handle_bug_solutions(chatID))
+            
+            # === NAVIGATION SELON L'ÉTAT (AUTRES ÉTATS) ===
+            if current_state == "verification_email":
                 # NOUVEAU: Gestion de la vérification email
                 if message_lower == "1" or "j'ai trouvé" in message_lower or "j'ai vu" in message_lower:
                     self.set_user_state(chatID, "menu")
