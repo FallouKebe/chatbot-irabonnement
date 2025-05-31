@@ -167,45 +167,55 @@ class ultraChatBot():
         message_to = message.get('to', '')
         from_me = message.get('fromMe', True)
         
-        print(f"🔍 Vérification SAV - From: {message_from}, To: {message_to}, FromMe: {from_me}, Body: {message_body}")
+        print(f"🔍 DEBUG SAV - From: {message_from}, To: {message_to}, FromMe: {from_me}")
+        print(f"🔍 DEBUG SAV - Body: '{message_body}'")
         
-        # Le SAV humain utilise le même numéro que le bot (22958131828@c.us)
-        # MAIS avec fromMe=false (alors que le bot automatique a fromMe=true)
-        bot_number = "22958131828@c.us"
+        # TOUS les numéros possibles du bot
+        possible_bot_numbers = [
+            "22958131828@c.us",
+            "instance114147@c.us", 
+            "114147@c.us"
+        ]
         
-        if message_from != bot_number:
-            print(f"📱 Message ne vient pas du numéro bot {bot_number} - ignoré")
+        # Vérifier si ça vient d'un des numéros du bot
+        is_from_bot = message_from in possible_bot_numbers
+        print(f"🔍 DEBUG SAV - Message vient du bot? {is_from_bot}")
+        
+        if not is_from_bot:
+            print(f"📱 Message ne vient pas du bot - ignoré pour SAV")
             return None
         
         if from_me:
-            print(f"📱 Message vient du bot automatique (fromMe=true) - ignoré pour SAV")
+            print(f"📱 Message automatique du bot (fromMe=true) - ignoré pour SAV")
             return None
             
-        print(f"✅ Message SAV humain détecté (même numéro bot mais fromMe=false)")
+        print(f"✅ POTENTIEL MESSAGE SAV HUMAIN détecté !")
         
-        # PHRASES EXACTES POUR LES HUMAINS SAV
+        # PHRASES EXACTES POUR LES HUMAINS SAV (avec debug)
         sav_phrases = [
-            "je prends votre demande en charge",    # PHRASE EXACTE DE VOTRE TEST
+            "je prends votre demande en charge",
+            "je prends votre demande",
             "je suis la sav qui vous prends en charge",
             "je suis le sav qui vous prend en charge", 
             "bonjour je suis votre conseiller",
             "je suis votre conseiller",
             "bonjour, je suis le sav",
-            "je vais m'occuper de vous personnellement",
+            "je vais m'occuper de vous",
             "c'est moi qui vais traiter votre dossier",
-            "bonjour, je reprends votre demande",
-            "salut, je m'occupe de votre problème",
+            "je reprends votre demande",
+            "je m'occupe de votre problème",
             "je suis votre agent de support"
         ]
         
         for phrase in sav_phrases:
             if phrase in message_body:
-                # Le client à mettre en silence est le destinataire du message SAV
                 client_id = message_to
-                print(f"🎯 PHRASE SAV DÉTECTÉE: '{phrase}' → Client {client_id} mis en silence")
+                print(f"🎯 *** PHRASE SAV DÉTECTÉE *** : '{phrase}'")
+                print(f"🎯 *** CLIENT À METTRE EN SILENCE *** : {client_id}")
                 return client_id
         
-        print(f"❌ Aucune phrase SAV trouvée dans: {message_body}")
+        print(f"❌ Aucune phrase SAV trouvée dans: '{message_body}'")
+        print(f"❌ Phrases recherchées: {sav_phrases}")
         return None
 
     def check_silence_expiration(self, chatID):
@@ -556,14 +566,24 @@ Merci pour votre patience."""
                 print(f"🔇 Message du groupe SAV ignoré - pas de traitement")
                 return 'SAVGroupIgnored'
             
-            # CORRIGÉ: Détecter si un SAV humain prend en charge
+            # CORRIGÉ: Détecter si un SAV humain prend en charge (avec debug renforcé)
             sav_client = self.check_sav_takeover(message)
             if sav_client:
-                print(f"🔇 SAV PRISE EN CHARGE - Silence activé pour client: {sav_client}")
+                print(f"🚨🚨🚨 SAV PRISE EN CHARGE DÉTECTÉE 🚨🚨🚨")
+                print(f"🔇 *** ACTIVATION SILENCE POUR CLIENT: {sav_client} ***")
                 self.activate_silence_mode(sav_client, "human_sav_active")
-                # Sauvegarder immédiatement
                 self.save_sessions()
                 return 'HumanSAVDetected'
+            
+            # FALLBACK: Détecter phrases SAV même si fromMe=true (au cas où)
+            message_body_lower = message.get('body', '').lower()
+            if "je prends votre demande en charge" in message_body_lower:
+                client_target = message.get('to', '')
+                if client_target:
+                    print(f"🚨 FALLBACK SAV DÉTECTÉ: Phrase trouvée, client {client_target} mis en silence")
+                    self.activate_silence_mode(client_target, "human_sav_active_fallback")
+                    self.save_sessions()
+                    return 'HumanSAVDetectedFallback'
             
             # Traitement des images et messages
             if self.is_image_message(message):
