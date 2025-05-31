@@ -158,24 +158,28 @@ class ultraChatBot():
         self.set_user_data(chatID, "silence_reason", reason)
         print(f"🔇 SILENCE ACTIVÉ pour {chatID} - Raison: {reason}")
 
-    def check_sav_message(self, message):
-        """SIMPLE: Détecte si c'est un message du SAV"""
-        message_body = message.get('body', '').lower()
+    def check_sav_command(self, message):
+        """Détecte les commandes SAV simples"""
+        message_body = message.get('body', '').strip()
         
-        # Phrases qui indiquent que le SAV prend en charge
-        sav_phrases = [
-            "je prends votre demande en charge",
-            "je prends votre demande",
-            "je suis la sav qui vous prends en charge",
-            "je suis le sav qui vous prend en charge"
-        ]
+        # Commande /sav - Met en silence le client de cette conversation
+        if message_body == '/sav':
+            client_number = message.get('to', '')  # Le destinataire = client à faire taire
+            if client_number:
+                print(f"🎯 COMMANDE SAV: /sav pour conversation avec {client_number}")
+                return ('sav_silence', client_number)
         
-        for phrase in sav_phrases:
-            if phrase in message_body:
-                client_id = message.get('to', '')
-                if client_id:
-                    print(f"🎯 SAV DÉTECTÉ: Phrase '{phrase}' → Client {client_id} mis en silence")
-                    return client_id
+        # Commande /reactiver - Réactive le client de cette conversation  
+        elif message_body == '/reactiver':
+            client_number = message.get('to', '')
+            if client_number:
+                print(f"🎯 COMMANDE SAV: /reactiver pour conversation avec {client_number}")
+                return ('sav_reactivate', client_number)
+                
+        # Aide SAV
+        elif message_body == '/aide':
+            return ('help', None)
+        
         return None
 
     def get_main_menu(self):
@@ -289,11 +293,38 @@ Quel produit souhaitez-vous comprendre ? Répondez simplement avec le nom du pro
             if message.get('fromMe'):
                 return 'FromMe'
             
-            # PRIORITÉ #1: Détecter si le SAV prend en charge
-            sav_client = self.check_sav_message(message)
-            if sav_client:
-                self.activate_silence_mode(sav_client, "sav_active")
-                return 'SAVDetected'
+            # PRIORITÉ #1: Détecter les commandes SAV (/sav, /reactiver, /aide)
+            sav_command = self.check_sav_command(message)
+            if sav_command:
+                command_type, client_number = sav_command
+                
+                if command_type == 'help':
+                    help_text = """🤖 **COMMANDES SAV**
+
+🔇 `/sav` - Met en silence le client de cette conversation
+🔊 `/reactiver` - Réactive le client de cette conversation  
+📖 `/aide` - Affiche cette aide
+
+**Utilisation:**
+• Tapez `/sav` directement dans la conversation client
+• Le silence se désactive automatiquement après 2h
+• Utilisez `/reactiver` pour réactiver avant les 2h"""
+                    return self.send_message(message.get('from'), help_text)
+                
+                elif command_type == 'sav_silence':
+                    self.activate_silence_mode(client_number, "sav_command")
+                    print(f"✅ Client {client_number} mis en SILENCE par /sav")
+                    # Pas de confirmation visible pour rester discret
+                    return 'SAVSilenceActivated'
+                
+                elif command_type == 'sav_reactivate':
+                    # Réactiver le client
+                    self.set_user_state(client_number, "menu")
+                    self.set_user_data(client_number, "silence_timestamp", None)
+                    self.set_user_data(client_number, "silence_reason", None)
+                    print(f"✅ Client {client_number} RÉACTIVÉ par /reactiver")
+                    # Pas de confirmation visible pour rester discret
+                    return 'SAVReactivated'
             
             # Traitement des images et messages
             if self.is_image_message(message):
@@ -312,13 +343,19 @@ Quel produit souhaitez-vous comprendre ? Répondez simplement avec le nom du pro
             current_state = self.get_user_state(chatID)
             print(f"🔄 État actuel: {current_state}")
             
-            # PRIORITÉ #2: Vérifier si en mode silence
+            # PRIORITÉ #2: Vérifier l'expiration du silence (2h) avant tout traitement
+            if self.check_silence_expiration(chatID):
+                # Client réactivé automatiquement, traiter le message normalement
+                current_state = self.get_user_state(chatID)  # Recharger l'état
+                print(f"⏰ Client réactivé automatiquement, nouvel état: {current_state}")
+            
+            # PRIORITÉ #3: Vérifier si en mode silence
             if current_state == "silence_mode":
                 silence_reason = self.get_user_data(chatID, "silence_reason", "unknown")
                 print(f"🔇 UTILISATEUR EN SILENCE ({silence_reason}) - AUCUNE RÉPONSE")
                 return "SilenceMode"
             
-            # PRIORITÉ #3: Commande "menu"
+            # PRIORITÉ #4: Commande "menu"
             if message_lower in ['menu', 'accueil', 'retour']:
                 self.set_user_state(chatID, "menu")
                 # Reset spam counter
@@ -326,14 +363,14 @@ Quel produit souhaitez-vous comprendre ? Répondez simplement avec le nom du pro
                     self.user_sessions[chatID]["messages"] = []
                 return self.send_message(chatID, self.get_main_menu())
             
-            # PRIORITÉ #4: Réponses simples
+            # PRIORITÉ #5: Réponses simples
             if message_lower in ['merci', 'thank you', 'thanks']:
                 return self.send_message(chatID, "Je vous en prie 😊")
             
             if message_lower in ['bonjour', 'bonsoir', 'salut', 'hello', 'hi']:
                 return self.send_message(chatID, self.get_main_menu())
             
-            # PRIORITÉ #5: Navigation selon l'état
+            # PRIORITÉ #6: Navigation selon l'état
             if current_state == "menu":
                 # Gestion des images non sollicitées
                 if message_lower == "image":
