@@ -43,17 +43,12 @@ class ultraChatBot():
             "Patience svp, votre insistance rallonge les délais de réponse. Nous vous aiderons."
         ]
 
-        # NOUVEAU : Messages d'avertissement menu (seront complétés avec le menu)
+        # Messages d'avertissement menu
         self.menu_warning_messages = {
             "first": "Veuillez répondre à partir du menu que je vous affiche. Tapez simplement le numéro de votre choix (1, 2, 3, 4, 5 ou 6). Toute autre réponse ne peut pas être comprise par mon système automatique.",
             "second": "N'exagérez pas, merci de répondre à partir du menu en tapant le numéro correspondant à votre demande. C'est la seule façon pour moi de vous aider efficacement.",
             "final": "Ok, comme vous voulez. Si vous ne souhaitez pas coopérer, je reste en silence. Vous pourrez me reparler dans 2 heures ou taper 'menu' à tout moment."
         }
-        
-        # NOUVEAU : Liste des numéros SAV autorisés
-        self.sav_numbers = [
-            "22958131828@c.us"    # Ajoutez d'autres numéros SAV si nécessaire
-        ]
 
     def load_processed_messages(self):
         """Charge la liste des messages déjà traités"""
@@ -165,40 +160,52 @@ class ultraChatBot():
         print(f"📤 Envoi alerte SAV vers {sav_destination}: {message}")
         return self.send_message(sav_destination, message)
 
-    def is_sav_number(self, phone_number):
-        """NOUVEAU: Vérifie si le numéro est un membre du SAV"""
-        return phone_number in self.sav_numbers
-
     def check_sav_takeover(self, message):
-        """CORRIGÉ: Détecte si un membre SAV prend en charge ET identifie le client"""
+        """CORRIGÉ: Détecte si le SAV HUMAIN prend en charge (même numéro que bot mais fromMe=false)"""
         message_from = message.get('from', '')
         message_body = message.get('body', '').lower()
+        message_to = message.get('to', '')
+        from_me = message.get('fromMe', True)
         
-        # Vérifier si le message vient d'un numéro SAV autorisé
-        if not self.is_sav_number(message_from):
-            print(f"📱 Message non-SAV de {message_from} - ignoré pour détection prise en charge")
+        print(f"🔍 Vérification SAV - From: {message_from}, To: {message_to}, FromMe: {from_me}, Body: {message_body}")
+        
+        # Le SAV humain utilise le même numéro que le bot (22958131828@c.us)
+        # MAIS avec fromMe=false (alors que le bot automatique a fromMe=true)
+        bot_number = "22958131828@c.us"
+        
+        if message_from != bot_number:
+            print(f"📱 Message ne vient pas du numéro bot {bot_number} - ignoré")
             return None
         
+        if from_me:
+            print(f"📱 Message vient du bot automatique (fromMe=true) - ignoré pour SAV")
+            return None
+            
+        print(f"✅ Message SAV humain détecté (même numéro bot mais fromMe=false)")
+        
+        # PHRASES EXACTES POUR LES HUMAINS SAV
         sav_phrases = [
+            "je prends votre demande en charge",    # PHRASE EXACTE DE VOTRE TEST
             "je suis la sav qui vous prends en charge",
             "je suis le sav qui vous prend en charge", 
-            "sav qui vous prend en charge",
-            "je m'occupe de votre dossier",
-            "je prends votre demande en charge",
             "bonjour je suis votre conseiller",
             "je suis votre conseiller",
             "bonjour, je suis le sav",
-            "je vais m'occuper de vous",
-            "je traite votre demande"
+            "je vais m'occuper de vous personnellement",
+            "c'est moi qui vais traiter votre dossier",
+            "bonjour, je reprends votre demande",
+            "salut, je m'occupe de votre problème",
+            "je suis votre agent de support"
         ]
         
         for phrase in sav_phrases:
             if phrase in message_body:
-                # Retourner le destinataire (client) à mettre en silence
-                client_id = message.get('to', '')
-                print(f"👨‍💼 SAV prise en charge détectée de {message_from} pour client {client_id}")
+                # Le client à mettre en silence est le destinataire du message SAV
+                client_id = message_to
+                print(f"🎯 PHRASE SAV DÉTECTÉE: '{phrase}' → Client {client_id} mis en silence")
                 return client_id
         
+        print(f"❌ Aucune phrase SAV trouvée dans: {message_body}")
         return None
 
     def check_silence_expiration(self, chatID):
@@ -224,7 +231,10 @@ class ultraChatBot():
         self.set_user_state(chatID, "silence_mode")
         self.set_user_data(chatID, "silence_timestamp", time.time())
         self.set_user_data(chatID, "silence_reason", reason)
-        print(f"🔇 Mode silence activé pour {chatID} - Raison: {reason}")
+        print(f"🔇 MODE SILENCE ACTIVÉ POUR {chatID} - RAISON: {reason}")
+        print(f"📊 État maintenant: {self.get_user_state(chatID)}")
+        print(f"💾 Session sauvegardée pour {chatID}")
+        self.save_sessions()
 
     def get_main_menu(self):
         return """Bienvenue chez irabonnement.com 👋
@@ -549,8 +559,10 @@ Merci pour votre patience."""
             # CORRIGÉ: Détecter si un SAV humain prend en charge
             sav_client = self.check_sav_takeover(message)
             if sav_client:
-                print(f"👨‍💼 SAV humain détecté - activation silence total pour {sav_client}")
+                print(f"🔇 SAV PRISE EN CHARGE - Silence activé pour client: {sav_client}")
                 self.activate_silence_mode(sav_client, "human_sav_active")
+                # Sauvegarder immédiatement
+                self.save_sessions()
                 return 'HumanSAVDetected'
             
             # Traitement des images et messages
@@ -567,15 +579,10 @@ Merci pour votre patience."""
                 message_body = message['body'].strip()
                 message_lower = message_body.lower()
             
-            # Ignorer nos propres messages
+            # Ignorer nos propres messages automatiques
             if message['fromMe']:
-                print("Message envoyé par nous, ignoré")
+                print("Message envoyé par le bot automatique, ignoré")
                 return 'FromMe'
-                
-            # NOUVEAU: Ignorer les messages des numéros SAV (pour éviter qu'ils soient traités comme clients)
-            if self.is_sav_number(chatID):
-                print(f"🔇 Message du SAV {chatID} ignoré - pas de traitement client")
-                return 'SAVMessageIgnored'
                 
             print(f"📱 Message reçu de {chatID}: {message_body}")
             print(f"🔄 État actuel: {self.get_user_state(chatID)}")
@@ -589,7 +596,7 @@ Merci pour votre patience."""
             current_state = self.get_user_state(chatID)
             if current_state == "silence_mode":
                 silence_reason = self.get_user_data(chatID, "silence_reason", "unknown")
-                print(f"🔇 Utilisateur {chatID} en mode silence ({silence_reason}) - aucune réponse")
+                print(f"🔇 UTILISATEUR {chatID} EN MODE SILENCE ({silence_reason}) - AUCUNE RÉPONSE")
                 return "SilenceMode"
             
             # PRIORITÉ #1 : Commande "menu" (réactive toujours SAUF si SAV humain actif)
